@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Dalil Flashcard</title>
 <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -14,9 +14,10 @@
     --text-dim: #7a8099; --text-muted: #4a5068; --radius: 16px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; }
   body::before { content: ''; position: fixed; inset: 0; background-image: radial-gradient(circle at 20% 20%, rgba(201,168,76,0.04) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(76,175,130,0.03) 0%, transparent 50%); pointer-events: none; z-index: 0; }
-  .app { position: relative; z-index: 1; width: 100%; max-width: 680px; padding: 24px 16px 60px; }
+  .app { position: relative; z-index: 1; width: 100%; max-width: 680px; padding: 24px 16px 60px; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
 
   /* AUTH */
   .auth-screen { display: flex; align-items: center; justify-content: center; width: 100%; padding: 60px 16px 16px; position: relative; z-index: 1; }
@@ -52,7 +53,7 @@
   .header h1 { font-size: 20px; font-weight: 700; text-align: center; }
   .user-info { display: flex; align-items: center; gap: 8px; }
   .user-email { font-size: 11px; color: var(--text-dim); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .btn-logout { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; transition: all 0.2s; }
+  .btn-logout { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; transition: all 0.2s; white-space: nowrap; flex-shrink: 0; }
   .btn-logout:hover { border-color: var(--red); color: var(--red); }
 
   /* TABS */
@@ -198,6 +199,25 @@
   .toast.show { transform: translateX(-50%) translateY(0); }
   .hidden { display: none !important; }
   .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* MOBILE */
+  @media (max-width: 480px) {
+    .app { padding-top: 16px; }
+    .header { margin-bottom: 20px; }
+    .header-badge { font-size: 16px; }
+    .user-email { max-width: 110px; font-size: 10px; }
+    .btn-logout { padding: 5px 9px; font-size: 10px; }
+    .tabs { margin-bottom: 18px; }
+    .tab { font-size: 11px; padding: 8px 2px; }
+    .stats-bar { gap: 8px; margin-bottom: 18px; }
+    .stat { padding: 10px 6px; }
+    .stat-num { font-size: 20px; }
+    .stat-label { font-size: 10px; }
+  }
+  @media (max-width: 360px) {
+    .header-badge { display: none; }
+    .user-email { max-width: 140px; }
+  }
 </style>
 </head>
 <body>

@@ -108,6 +108,12 @@
   .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; }
   .filter-btn.active { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
+  .filter-row.deck-row .filter-btn { font-size: 11px; padding: 5px 12px; }
+  .filter-row.deck-row { gap: 6px; margin-bottom: 12px; }
+  .deck-source { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
+  .deck-source strong { color: var(--text-dim); font-style: normal; }
+  .btn-delete-imported { padding: 5px 10px; border-radius: 20px; border: 1px solid rgba(224,92,92,0.3); background: rgba(224,92,92,0.08); color: var(--red); font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; }
+  .btn-delete-imported:hover { background: rgba(224,92,92,0.18); }
 
   /* LIST */
   .card-list { width: 100%; }
@@ -168,6 +174,12 @@
   .loading { display: flex; align-items: center; justify-content: center; padding: 60px 20px; gap: 10px; color: var(--text-dim); font-size: 14px; }
   .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* FOOTER */
+  .app-footer { width: 100%; text-align: center; padding: 24px 16px 32px; font-size: 11px; color: var(--text-muted); letter-spacing: 0.3px; position: relative; z-index: 1; }
+  .app-footer .heart { color: var(--red); }
+  .app-footer .brand { color: var(--gold); font-weight: 600; }
+  .app-footer .sep { margin: 0 8px; opacity: 0.5; }
 
   /* TOAST */
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--card); border: 1px solid var(--gold); color: var(--gold); padding: 10px 20px; border-radius: 30px; font-size: 13px; font-weight: 600; transition: transform 0.3s ease; z-index: 100; white-space: nowrap; }
@@ -239,6 +251,7 @@
       <button class="filter-btn" onclick="setFilter('Hadith',this)">📜 Hadith</button>
       <button class="filter-btn" onclick="setFilter('Seerah',this)">🕌 Seerah</button>
     </div>
+    <div class="filter-row" id="studyDeckFilterRow"></div>
     <div class="flashcard-section" id="studyArea">
       <div class="loading"><div class="spinner"></div> Loading cards...</div>
     </div>
@@ -264,6 +277,13 @@
 
   <!-- MY CARDS -->
   <div id="tab-list" class="hidden">
+    <div class="filter-row" id="listCatFilterRow">
+      <button class="filter-btn active" onclick="setListFilter('all',this)">All</button>
+      <button class="filter-btn" onclick="setListFilter('Quran',this)">📖 Quran</button>
+      <button class="filter-btn" onclick="setListFilter('Hadith',this)">📜 Hadith</button>
+      <button class="filter-btn" onclick="setListFilter('Seerah',this)">🕌 Seerah</button>
+    </div>
+    <div class="filter-row" id="listDeckFilterRow"></div>
     <div class="card-list" id="cardList"><div class="loading"><div class="spinner"></div> Loading...</div></div>
   </div>
 
@@ -284,32 +304,76 @@
   </div>
 </div>
 
+<footer class="app-footer">
+  Built with <span class="heart">❤️</span> by <span class="brand">BroApp</span><span class="sep">·</span>A Nuvia Ventures Product
+</footer>
+
 <div class="toast" id="toast"></div>
 
 <script>
 const SUPABASE_URL = 'https://zzkxlvffhgbrzzshqbsa.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6a3hsdmZmaGdicnp6c2hxYnNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNjg1NDYsImV4cCI6MjA5Mzc0NDU0Nn0.l7i1u5Kcm_EF7FpbUhRjXT3qJqzX1jOx1XxoSA98nkU';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: {
+    // Disable navigator.locks-based auth lock — hangs on Safari after page reload.
+    lock: (_name, _timeout, fn) => fn(),
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  }
+});
+
+// Helper: race a promise against a timeout so a hung Supabase call can't freeze the UI.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+  ]);
+}
 
 let currentUser = null, cards = [], deck = [], current = 0, flipped = false;
 let sessionKnew = 0, sessionForgot = 0, activeFilter = 'all', sharedStudyDeck = null;
 let importedDeckIds = new Set(); // tracks decks already imported this session
+// Deck-level filter: null = all decks in category, 'mine' = personal cards only,
+// or a uuid string = a specific imported deck. Separate state for Study and My Cards.
+let activeStudyDeckId = null;
+let listCatFilter = 'all';
+let activeListDeckId = null;
 
 // ── AUTH ──
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
-    currentUser = session.user;
-    document.getElementById('authScreen').classList.add('hidden');
-    document.getElementById('mainApp').classList.remove('hidden');
-    document.getElementById('userEmailDisplay').textContent = currentUser.email;
-    buildDeck();
-    try { await loadCards(); } catch(e) { console.error('loadCards failed:', e); }
-    buildDeck();
-  } else {
-    currentUser = null;
-    document.getElementById('authScreen').classList.remove('hidden');
-    document.getElementById('mainApp').classList.add('hidden');
+async function enterApp(user) {
+  currentUser = user;
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('mainApp').classList.remove('hidden');
+  document.getElementById('userEmailDisplay').textContent = currentUser.email;
+  buildDeck();
+  await loadCards();
+  buildDeck();
+}
+
+function showAuthScreen() {
+  currentUser = null;
+  document.getElementById('authScreen').classList.remove('hidden');
+  document.getElementById('mainApp').classList.add('hidden');
+}
+
+// On page load: explicitly check session instead of waiting for onAuthStateChange
+// (which can be delayed or stuck on Safari after a refresh).
+(async () => {
+  try {
+    const {data:{session}} = await withTimeout(sb.auth.getSession(), 5000, 'getSession');
+    if (session?.user) await enterApp(session.user);
+    else showAuthScreen();
+  } catch(e) {
+    console.error('initial auth check failed:', e);
+    showAuthScreen();
   }
+})();
+
+// Also listen for sign-in/sign-out events (e.g. after signInWithPassword resolves).
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' && session?.user && !currentUser) enterApp(session.user);
+  else if (event === 'SIGNED_OUT') showAuthScreen();
 });
 
 function switchAuthTab(tab) {
@@ -356,16 +420,29 @@ async function signUp() {
   showAuthMsg('authSuccess','✅ Account created! Check your email to confirm, then sign in.');
 }
 
-async function signOut() {
-  await sb.auth.signOut();
-  cards=[]; deck=[]; sessionKnew=0; sessionForgot=0; importedDeckIds=new Set();
+function signOut() {
+  // Clear Supabase session tokens from localStorage so the reload comes up logged-out
+  Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k));
+  // Fire-and-forget the SDK call (may hang — we don't care, we're reloading anyway)
+  try { sb.auth.signOut({scope:'local'}); } catch(e) {}
+  // Full page reload — resets all in-memory state (Supabase client, button states, etc.)
+  window.location.reload();
 }
 
 // ── CARDS ──
 async function loadCards() {
-  const {data,error}=await sb.from('cards').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:false});
-  if(!error) cards=data||[];
-  updateStats();
+  try {
+    const {data,error}=await withTimeout(
+      sb.from('cards').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:false}),
+      8000, 'loadCards'
+    );
+    if(error){console.error('loadCards error:',error);return;}
+    cards=data||[];
+  } catch(e) {
+    console.error('loadCards failed:',e);
+  } finally {
+    updateStats();
+  }
 }
 
 async function addCard() {
@@ -422,22 +499,73 @@ async function saveEditCard(id) {
 // ── TABS ──
 function switchTab(tab) {
   ['study','add','list','shared'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab));
-  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['study','add','list','shared'][i]===tab));
-  if(tab==='list') renderList();
-  if(tab==='study'){sharedStudyDeck=null; buildDeck();}
+  document.querySelectorAll('.tabs > .tab').forEach((el,i)=>el.classList.toggle('active',['study','add','list','shared'][i]===tab));
+  if(tab==='list'){renderListDeckFilter(); renderList();}
+  if(tab==='study'){sharedStudyDeck=null; renderStudyDeckFilter(); buildDeck();}
   if(tab==='shared') renderSharedTab();
 }
 
 function setFilter(f,btn) {
-  activeFilter=f; sharedStudyDeck=null;
-  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); buildDeck();
+  activeFilter=f; sharedStudyDeck=null; activeStudyDeckId=null;
+  // Only reset highlights inside the category row, not the deck row
+  document.querySelectorAll('#tab-study > .filter-row:first-child .filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderStudyDeckFilter(); buildDeck();
+}
+
+function setStudyDeckFilter(deckId,btn) {
+  activeStudyDeckId=deckId;
+  document.querySelectorAll('#studyDeckFilterRow .filter-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  buildDeck();
 }
 
 // ── STUDY ──
+// Group cards into deck buckets within a given category.
+// Returns { personalCount, decks: [{id, title, email, count}] }
+function getDeckGroups(cat) {
+  const filtered = cat==='all' ? cards : cards.filter(c=>c.cat===cat);
+  let personalCount = 0;
+  const map = {};
+  filtered.forEach(c=>{
+    if(!c.source_deck_id){ personalCount++; return; }
+    if(!map[c.source_deck_id]){
+      map[c.source_deck_id]={id:c.source_deck_id, title:c.source_deck_title||'Imported deck', email:c.source_owner_email||'', count:0};
+    }
+    map[c.source_deck_id].count++;
+  });
+  return {personalCount, decks:Object.values(map)};
+}
+
+function renderStudyDeckFilter() {
+  const row=document.getElementById('studyDeckFilterRow');
+  if(sharedStudyDeck){row.innerHTML='';row.classList.remove('deck-row');return;}
+  const {personalCount, decks}=getDeckGroups(activeFilter);
+  // Hide row entirely if there are no imported decks in this category
+  if(decks.length===0){row.innerHTML='';row.classList.remove('deck-row');return;}
+  row.classList.add('deck-row');
+  const total=personalCount+decks.reduce((s,d)=>s+d.count,0);
+  const pills=[
+    `<button class="filter-btn ${activeStudyDeckId===null?'active':''}" onclick="setStudyDeckFilter(null,this)">All (${total})</button>`,
+    `<button class="filter-btn ${activeStudyDeckId==='mine'?'active':''}" onclick="setStudyDeckFilter('mine',this)">My Cards (${personalCount})</button>`,
+    ...decks.map(d=>`<button class="filter-btn ${activeStudyDeckId===d.id?'active':''}" onclick="setStudyDeckFilter('${d.id}',this)" title="${escAttr(d.title)} — by ${escAttr(d.email)}">📚 ${escHtml(d.title)} (${d.count})</button>`)
+  ];
+  // If an imported deck is currently selected, append a delete button
+  if(activeStudyDeckId && activeStudyDeckId!=='mine'){
+    pills.push(`<button class="btn-delete-imported" onclick="deleteImportedDeck('${activeStudyDeckId}')">🗑 Remove deck</button>`);
+  }
+  row.innerHTML=pills.join('');
+}
+
 function buildDeck() {
-  const src=sharedStudyDeck||cards;
-  deck=activeFilter==='all'?[...src]:src.filter(c=>c.cat===activeFilter);
+  if(sharedStudyDeck){
+    deck=[...sharedStudyDeck];
+  } else {
+    let src = activeFilter==='all' ? cards : cards.filter(c=>c.cat===activeFilter);
+    if(activeStudyDeckId==='mine') src = src.filter(c=>!c.source_deck_id);
+    else if(activeStudyDeckId) src = src.filter(c=>c.source_deck_id===activeStudyDeckId);
+    deck=[...src];
+  }
   for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
   current=0; flipped=false; renderStudy();
 }
@@ -519,15 +647,48 @@ function renderDone() {
 function restartSession(){sessionKnew=0;sessionForgot=0;updateStats();buildDeck();}
 
 // ── MY CARDS LIST ──
+function setListFilter(f,btn) {
+  listCatFilter=f; activeListDeckId=null;
+  document.querySelectorAll('#listCatFilterRow .filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderListDeckFilter(); renderList();
+}
+function setListDeckFilter(deckId,btn) {
+  activeListDeckId=deckId;
+  document.querySelectorAll('#listDeckFilterRow .filter-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  renderList();
+}
+function renderListDeckFilter() {
+  const row=document.getElementById('listDeckFilterRow');
+  const {personalCount, decks}=getDeckGroups(listCatFilter);
+  if(decks.length===0){row.innerHTML='';row.classList.remove('deck-row');return;}
+  row.classList.add('deck-row');
+  const total=personalCount+decks.reduce((s,d)=>s+d.count,0);
+  const pills=[
+    `<button class="filter-btn ${activeListDeckId===null?'active':''}" onclick="setListDeckFilter(null,this)">All (${total})</button>`,
+    `<button class="filter-btn ${activeListDeckId==='mine'?'active':''}" onclick="setListDeckFilter('mine',this)">My Cards (${personalCount})</button>`,
+    ...decks.map(d=>`<button class="filter-btn ${activeListDeckId===d.id?'active':''}" onclick="setListDeckFilter('${d.id}',this)" title="${escAttr(d.title)} — by ${escAttr(d.email)}">📚 ${escHtml(d.title)} (${d.count})</button>`)
+  ];
+  if(activeListDeckId && activeListDeckId!=='mine'){
+    pills.push(`<button class="btn-delete-imported" onclick="deleteImportedDeck('${activeListDeckId}')">🗑 Remove deck</button>`);
+  }
+  row.innerHTML=pills.join('');
+}
+
 function renderList() {
   const list=document.getElementById('cardList');
-  if(cards.length===0){list.innerHTML='<div class="deck-empty"><div class="icon">📭</div><p>No cards yet.</p></div>';return;}
-  list.innerHTML=cards.map(c=>`
+  let visible = listCatFilter==='all' ? cards : cards.filter(c=>c.cat===listCatFilter);
+  if(activeListDeckId==='mine') visible = visible.filter(c=>!c.source_deck_id);
+  else if(activeListDeckId) visible = visible.filter(c=>c.source_deck_id===activeListDeckId);
+  if(visible.length===0){list.innerHTML='<div class="deck-empty"><div class="icon">📭</div><p>No cards in this view.</p></div>';return;}
+  list.innerHTML=visible.map(c=>`
     <div class="list-item" id="item_${c.id}">
       <div class="list-item-top">
         <div class="list-item-content">
           <div class="list-item-q">${escHtml(c.q)}</div>
           <div class="list-item-a">${escHtml(c.a)}</div>
+          ${c.source_deck_id?`<div class="deck-source">📚 from <strong>${escHtml(c.source_deck_title||'shared deck')}</strong>${c.source_owner_email?` · by ${escHtml(c.source_owner_email)}`:''}</div>`:''}
         </div>
         <div class="list-item-actions">
           <span class="cat-pill cat-${(c.cat||'').toLowerCase()}" style="font-size:10px;padding:3px 8px;">${c.cat}</span>
@@ -578,15 +739,17 @@ async function renderSharedTab() {
 
   listEl.innerHTML=decks.map(d=>{
     const mine=d.owner_id===currentUser.id;
-    const alreadyImported=importedDeckIds.has(d.id);
+    // "Already imported" = either flagged this session OR cards exist in library with this source_deck_id
+    const alreadyImported=importedDeckIds.has(d.id) || cards.some(c=>c.source_deck_id===d.id);
     const count=d.card_count||0;
+    const author=d.owner_email?` · by ${escHtml(d.owner_email)}`:'';
     return `<div class="deck-card">
       <div class="deck-card-header">
         <div class="deck-card-title">${escHtml(d.title)}</div>
         ${mine?'<span class="own-badge">You</span>':alreadyImported?'<span class="imported-badge">✅ Imported</span>':''}
       </div>
       ${d.description?`<div class="deck-card-desc">${escHtml(d.description)}</div>`:''}
-      <div class="deck-card-meta">${count} card${count===1?'':'s'}</div>
+      <div class="deck-card-meta">${count} card${count===1?'':'s'}${author}</div>
       <div class="deck-card-footer">
         <button class="btn-small btn-study-deck" onclick="studySharedDeck('${d.id}')">📖 Study</button>
         <button class="btn-small btn-import-deck" id="importBtn_${d.id}" onclick="importSharedDeck('${d.id}')" ${alreadyImported?'disabled':''}>
@@ -604,11 +767,17 @@ async function createSharedDeck() {
   const selectedIds=[...document.querySelectorAll('#deckCardPicker input:checked')].map(el=>el.value);
   if(selectedIds.length===0){showToast('Select at least one card.');return;}
   const btn=document.getElementById('createDeckBtn'); btn.disabled=true; btn.textContent='Publishing...';
-  const {data:d,error:e1}=await sb.from('shared_decks').insert([{owner_id:currentUser.id,title,description:desc}]).select().single();
-  if(e1){showToast('Error creating deck.'); btn.disabled=false; btn.textContent='🚀 Publish Deck'; return;}
+  const {data:d,error:e1}=await sb.from('shared_decks').insert([{owner_id:currentUser.id,owner_email:currentUser.email,title,description:desc}]).select().single();
+  if(e1){console.error('shared_decks insert failed:',e1); showToast('Error creating deck: '+e1.message); btn.disabled=false; btn.textContent='🚀 Publish Deck'; return;}
   const sc=cards.filter(c=>selectedIds.includes(c.id)).map(c=>({deck_id:d.id,cat:c.cat,q:c.q,a:c.a,arabic:c.arabic||''}));
   const {error:e2}=await sb.from('shared_cards').insert(sc);
-  if(e2){showToast('Error adding cards to deck.'); btn.disabled=false; btn.textContent='🚀 Publish Deck'; return;}
+  if(e2){
+    console.error('shared_cards insert failed:',e2);
+    // Roll back the orphaned deck so retries don't pile up
+    await sb.from('shared_decks').delete().eq('id',d.id);
+    showToast('Error adding cards: '+e2.message);
+    btn.disabled=false; btn.textContent='🚀 Publish Deck'; return;
+  }
   btn.disabled=false; btn.textContent='🚀 Publish Deck';
   document.getElementById('deckTitle').value=''; document.getElementById('deckDesc').value='';
   showToast(`✅ Deck "${title}" published!`); renderSharedTab();
@@ -623,20 +792,54 @@ async function studySharedDeck(deckId) {
 }
 
 async function importSharedDeck(deckId) {
-  // Prevent re-importing
-  if(importedDeckIds.has(deckId)){showToast('Already imported this session!');return;}
+  // Allow re-import only if user hasn't already imported this deck (data-level check, not just session)
+  const alreadyImported = cards.some(c=>c.source_deck_id===deckId);
+  if(alreadyImported){showToast('You already imported this deck.');return;}
   const btn=document.getElementById('importBtn_'+deckId);
   if(btn){btn.disabled=true; btn.textContent='Importing...';}
 
-  const {data,error}=await sb.from('shared_cards').select('*').eq('deck_id',deckId);
-  if(error||!data){showToast('Error loading deck.');if(btn){btn.disabled=false;btn.textContent='⬇️ Import';}return;}
-  const toInsert=data.map(c=>({user_id:currentUser.id,cat:c.cat,q:c.q,a:c.a,arabic:c.arabic||''}));
+  // Fetch deck metadata (title + owner email) and the cards in parallel
+  const [deckRes, cardsRes] = await Promise.all([
+    sb.from('shared_decks').select('title,owner_email').eq('id',deckId).single(),
+    sb.from('shared_cards').select('*').eq('deck_id',deckId)
+  ]);
+  if(deckRes.error||cardsRes.error||!cardsRes.data){
+    showToast('Error loading deck.'); if(btn){btn.disabled=false;btn.textContent='⬇️ Import';} return;
+  }
+  const {title, owner_email} = deckRes.data;
+  const toInsert=cardsRes.data.map(c=>({
+    user_id:currentUser.id,
+    cat:c.cat, q:c.q, a:c.a, arabic:c.arabic||'',
+    source_deck_id:deckId,
+    source_deck_title:title,
+    source_owner_email:owner_email||''
+  }));
   const {data:inserted,error:e2}=await sb.from('cards').insert(toInsert).select();
-  if(e2){showToast('Error importing.');if(btn){btn.disabled=false;btn.textContent='⬇️ Import';}return;}
+  if(e2){showToast('Error importing: '+e2.message);if(btn){btn.disabled=false;btn.textContent='⬇️ Import';}return;}
   cards=[...inserted,...cards]; updateStats();
-  importedDeckIds.add(deckId); // mark so we don't import again
-  if(btn){btn.textContent='✅ Imported';}
+  importedDeckIds.add(deckId);
+  if(btn){btn.textContent='✅ Imported'; btn.disabled=true;}
+  // Refresh deck-filter pills so the newly imported deck shows up
+  renderStudyDeckFilter(); renderListDeckFilter();
   showToast(`✅ ${inserted.length} cards imported!`);
+}
+
+async function deleteImportedDeck(deckId) {
+  const sample = cards.find(c=>c.source_deck_id===deckId);
+  const name = sample?.source_deck_title || 'this deck';
+  const count = cards.filter(c=>c.source_deck_id===deckId).length;
+  if(!confirm(`Remove "${name}" and all ${count} of its cards from your library?`)) return;
+  const {error}=await sb.from('cards').delete().eq('source_deck_id',deckId);
+  if(error){showToast('Error removing deck: '+error.message);return;}
+  cards=cards.filter(c=>c.source_deck_id!==deckId);
+  importedDeckIds.delete(deckId);
+  // Reset any deck filter pointing at the now-deleted deck
+  if(activeStudyDeckId===deckId) activeStudyDeckId=null;
+  if(activeListDeckId===deckId) activeListDeckId=null;
+  updateStats();
+  renderStudyDeckFilter(); renderListDeckFilter();
+  buildDeck(); renderList();
+  showToast(`🗑 "${name}" removed.`);
 }
 
 async function deleteSharedDeck(deckId) {

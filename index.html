@@ -271,7 +271,7 @@
   <div id="tab-shared" class="hidden">
     <div class="add-form">
       <h3>🌐 Create a Shared Deck</h3>
-      <p>Share your cards with your halaqah circle. Anyone can study or import your deck.</p>
+      <p>Share your cards with others. Anyone can study or import your deck.</p>
       <div class="field"><label>Deck Title</label><input type="text" id="deckTitle" placeholder="e.g. Hadith on Akhlaq" /></div>
       <div class="field"><label>Description (optional)</label><input type="text" id="deckDesc" placeholder="e.g. 20 hadith on character and manners" /></div>
       <p style="font-size:12px;margin-bottom:8px;color:var(--text-dim);">Select cards to include:</p>
@@ -343,10 +343,16 @@ async function signUp() {
   if(!email||!pw){showAuthMsg('authError','Please fill in all fields.');return;}
   if(pw.length<6){showAuthMsg('authError','Password must be at least 6 characters.');return;}
   const btn=document.getElementById('registerBtn'); btn.disabled=true; btn.textContent='Creating...';
-  const {error}=await sb.auth.signUp({email,password:pw});
+  const {data,error}=await sb.auth.signUp({email,password:pw});
   btn.disabled=false; btn.textContent='Create Account';
-  if(error) showAuthMsg('authError',error.message);
-  else showAuthMsg('authSuccess','✅ Account created! Check your email to confirm, then sign in.');
+  if(error){showAuthMsg('authError',error.message);return;}
+  if(!data.user||data.user.identities?.length===0){
+    showAuthMsg('authError','This email is already registered. Please sign in instead.');
+    switchAuthTab('login');
+    document.getElementById('loginEmail').value=email;
+    return;
+  }
+  showAuthMsg('authSuccess','✅ Account created! Check your email to confirm, then sign in.');
 }
 
 async function signOut() {
@@ -554,8 +560,7 @@ async function renderSharedTab() {
   const listEl=document.getElementById('sharedDeckList');
   listEl.innerHTML='<div class="loading"><div class="spinner"></div> Loading decks...</div>';
   const {data:decks,error}=await sb.from('shared_decks').select('*').order('created_at',{ascending:false});
-  if(error){listEl.innerHTML='<p style="color:var(--red);font-size:13px;">Error loading decks.</p>';return;}
-  if(!decks||decks.length===0){listEl.innerHTML='<div class="deck-empty"><div class="icon">📭</div><p>No shared decks yet.<br>Create one above!</p></div>';return;}
+  if(error||!decks||decks.length===0){listEl.innerHTML='<div class="deck-empty"><div class="icon">📭</div><p>No shared decks yet.<br>Be the first to publish one above!</p></div>';return;}
 
   listEl.innerHTML=decks.map(d=>{
     const mine=d.owner_id===currentUser.id;

@@ -432,7 +432,7 @@ function renderStudy() {
   const area=document.getElementById('studyArea');
   if(deck.length===0){
     const msg=sharedStudyDeck?'No cards in this deck.':'No cards yet.<br>Go to <strong>Add Card</strong> to get started!';
-    area.innerHTML=`<div class="deck-empty"><div class="icon">🃏</div><p>${msg}</p></div>`; return;
+    area.innerHTML=`<div class="deck-empty"><div class="icon">📖</div><p>${msg}</p></div>`; return;
   }
   if(current>=deck.length){renderDone();return;}
   const c=deck[current], catClass='cat-'+(c.cat||'').toLowerCase(), prog=(current/deck.length)*100;

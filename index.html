@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dalil Flashcard</title>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #181c27; --card: #1e2333; --border: #2a3047;
+    --gold: #c9a84c; --gold-light: #e8c97a; --gold-dim: rgba(201,168,76,0.15);
+    --green: #4caf82; --red: #e05c5c; --text: #e8e8f0;
+    --text-dim: #7a8099; --text-muted: #4a5068; --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  body::before { content: ''; position: fixed; inset: 0; background-image: radial-gradient(circle at 20% 20%, rgba(201,168,76,0.04) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(76,175,130,0.03) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+  .app { position: relative; z-index: 1; width: 100%; max-width: 680px; padding: 24px 16px 60px; }
+
+  /* AUTH */
+  .auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; width: 100%; padding: 24px 16px; position: relative; z-index: 1; }
+  .auth-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 36px 28px; width: 100%; max-width: 400px; }
+  .auth-logo { text-align: center; margin-bottom: 28px; }
+  .auth-logo .bismillah { font-family: 'Amiri', serif; font-size: 28px; color: var(--gold); display: block; margin-bottom: 8px; }
+  .auth-logo h1 { font-size: 22px; font-weight: 700; }
+  .auth-logo p { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+  .auth-tabs { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; margin-bottom: 20px; border: 1px solid var(--border); }
+  .auth-tab { flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-dim); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+  .auth-tab.active { background: var(--gold); color: #0f1117; }
+  .auth-msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
+  .auth-error { background: rgba(224,92,92,0.1); border: 1px solid rgba(224,92,92,0.3); color: var(--red); }
+  .auth-success { background: rgba(76,175,130,0.1); border: 1px solid rgba(76,175,130,0.3); color: var(--green); }
+
+  /* FIELDS */
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+  .field input, .field textarea, .field select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; outline: none; transition: border-color 0.2s; resize: vertical; }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--gold); }
+  .field select option { background: var(--card); }
+
+  /* BUTTONS */
+  .btn-primary { width: 100%; padding: 12px; background: var(--gold); color: #0f1117; border: none; border-radius: 10px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* HEADER */
+  .header { margin-bottom: 28px; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .header-badge { font-family: 'Amiri', serif; font-size: 20px; color: var(--gold); opacity: 0.8; }
+  .header h1 { font-size: 20px; font-weight: 700; text-align: center; }
+  .user-info { display: flex; align-items: center; gap: 8px; }
+  .user-email { font-size: 11px; color: var(--text-dim); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn-logout { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; transition: all 0.2s; }
+  .btn-logout:hover { border-color: var(--red); color: var(--red); }
+
+  /* TABS */
+  .tabs { display: flex; background: var(--surface); border-radius: 12px; padding: 4px; margin-bottom: 24px; border: 1px solid var(--border); gap: 2px; }
+  .tab { flex: 1; padding: 8px 4px; border: none; background: transparent; color: var(--text-dim); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 600; border-radius: 9px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .tab.active { background: var(--gold); color: #0f1117; }
+
+  /* STATS */
+  .stats-bar { display: flex; gap: 10px; margin-bottom: 24px; }
+  .stat { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
+  .stat-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  /* FORMS */
+  .add-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .add-form h3 { font-size: 14px; font-weight: 600; color: var(--gold); margin-bottom: 14px; }
+  .add-form p { font-size: 13px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.5; }
+
+  /* FLASHCARD */
+  .flashcard-section { display: flex; flex-direction: column; align-items: center; }
+  .deck-empty { text-align: center; padding: 60px 20px; color: var(--text-dim); }
+  .deck-empty .icon { font-size: 40px; margin-bottom: 12px; }
+  .deck-empty p { font-size: 14px; line-height: 1.6; }
+  .progress-row { width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .progress-label { font-size: 13px; color: var(--text-dim); }
+  .progress-bar { width: 100%; height: 4px; background: var(--border); border-radius: 4px; margin-bottom: 24px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 4px; transition: width 0.4s ease; }
+  .cat-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 20px; }
+  .cat-quran { background: rgba(201,168,76,0.15); color: var(--gold); }
+  .cat-hadith { background: rgba(76,175,130,0.15); color: var(--green); }
+  .cat-seerah { background: rgba(130,100,200,0.15); color: #a889e0; }
+  .card-scene { width: 100%; max-width: 520px; height: 280px; perspective: 1200px; margin-bottom: 20px; cursor: pointer; }
+  .card-inner { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.55s cubic-bezier(0.4,0.2,0.2,1); }
+  .card-inner.flipped { transform: rotateY(180deg); }
+  .card-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 28px; text-align: center; }
+  .card-front { background: var(--card); border: 1px solid var(--border); }
+  .card-front::before { content: ''; position: absolute; inset: 0; border-radius: var(--radius); background: radial-gradient(circle at 30% 30%, rgba(201,168,76,0.06), transparent 60%); pointer-events: none; }
+  .card-back { background: var(--card); border: 1px solid var(--gold); transform: rotateY(180deg); }
+  .card-back::before { content: ''; position: absolute; inset: 0; border-radius: var(--radius); background: radial-gradient(circle at 70% 70%, rgba(201,168,76,0.08), transparent 60%); pointer-events: none; }
+  .card-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; letter-spacing: 0.5px; }
+  .card-q { font-size: 17px; font-weight: 600; color: var(--text); line-height: 1.5; }
+  .card-a { font-size: 15px; color: var(--text); line-height: 1.6; }
+  .card-a .arabic { font-family: 'Amiri', serif; font-size: 20px; color: var(--gold-light); display: block; margin-bottom: 10px; line-height: 1.8; direction: rtl; }
+  .action-row { display: flex; gap: 10px; width: 100%; max-width: 520px; margin-bottom: 16px; }
+  .btn-result { flex: 1; padding: 13px; border: none; border-radius: 12px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+  .btn-forgot { background: rgba(224,92,92,0.15); color: var(--red); border: 1px solid rgba(224,92,92,0.3); }
+  .btn-knew { background: rgba(76,175,130,0.15); color: var(--green); border: 1px solid rgba(76,175,130,0.3); }
+  .btn-forgot:hover { background: rgba(224,92,92,0.25); }
+  .btn-knew:hover { background: rgba(76,175,130,0.25); }
+  .nav-row { display: flex; gap: 10px; width: 100%; max-width: 520px; }
+  .btn-nav { flex: 1; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text-dim); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-nav:hover { border-color: var(--gold); color: var(--gold); }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; }
+  .filter-btn.active { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
+
+  /* LIST */
+  .card-list { width: 100%; }
+  .list-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; transition: border-color 0.2s; }
+  .list-item:hover { border-color: var(--gold-dim); }
+  .list-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .list-item-content { flex: 1; min-width: 0; }
+  .list-item-q { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-item-a { font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-item-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+  .btn-edit { background: none; border: 1px solid var(--border); color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 3px 8px; border-radius: 6px; transition: all 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 600; }
+  .btn-edit:hover { border-color: var(--gold); color: var(--gold); }
+  .btn-delete { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 2px 4px; transition: color 0.2s; }
+  .btn-delete:hover { color: var(--red); }
+
+  /* INLINE EDIT */
+  .edit-form { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .edit-form .field { margin-bottom: 10px; }
+  .edit-form .field input, .edit-form .field textarea, .edit-form .field select { font-size: 13px; padding: 9px 12px; }
+  .edit-actions { display: flex; gap: 8px; }
+  .btn-save { flex: 1; padding: 9px; background: var(--gold); color: #0f1117; border: none; border-radius: 8px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+  .btn-save:hover { opacity: 0.85; }
+  .btn-cancel { flex: 1; padding: 9px; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-cancel:hover { border-color: var(--red); color: var(--red); }
+
+  /* SHARED DECKS */
+  .deck-grid { display: flex; flex-direction: column; gap: 12px; }
+  .deck-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; transition: border-color 0.2s; }
+  .deck-card:hover { border-color: var(--gold-dim); }
+  .deck-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+  .deck-card-title { font-size: 15px; font-weight: 700; color: var(--text); }
+  .deck-card-desc { font-size: 13px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+  .deck-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+  .deck-card-footer { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn-small { padding: 6px 14px; border-radius: 8px; border: none; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-study-deck { background: var(--gold-dim); color: var(--gold); border: 1px solid rgba(201,168,76,0.3); }
+  .btn-import-deck { background: rgba(76,175,130,0.1); color: var(--green); border: 1px solid rgba(76,175,130,0.3); }
+  .btn-import-deck:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-delete-deck { background: rgba(224,92,92,0.1); color: var(--red); border: 1px solid rgba(224,92,92,0.3); }
+  .own-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--gold-dim); color: var(--gold); font-weight: 700; }
+  .imported-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(76,175,130,0.15); color: var(--green); font-weight: 700; }
+
+  /* DONE */
+  .done-screen { text-align: center; padding: 40px 20px; }
+  .done-screen .icon { font-size: 48px; margin-bottom: 16px; }
+  .done-screen h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .done-screen p { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; }
+  .score-display { display: flex; gap: 16px; justify-content: center; margin-bottom: 24px; }
+  .score-box { padding: 16px 24px; border-radius: 12px; text-align: center; }
+  .score-box.knew { background: rgba(76,175,130,0.15); }
+  .score-box.forgot { background: rgba(224,92,92,0.15); }
+  .score-box .num { font-size: 28px; font-weight: 700; }
+  .score-box.knew .num { color: var(--green); }
+  .score-box.forgot .num { color: var(--red); }
+  .score-box .lbl { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+  /* LOADING */
+  .loading { display: flex; align-items: center; justify-content: center; padding: 60px 20px; gap: 10px; color: var(--text-dim); font-size: 14px; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--card); border: 1px solid var(--gold); color: var(--gold); padding: 10px 20px; border-radius: 30px; font-size: 13px; font-weight: 600; transition: transform 0.3s ease; z-index: 100; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .hidden { display: none !important; }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div class="auth-screen" id="authScreen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <span class="bismillah">﷽</span>
+      <h1>Dalil Flashcard</h1>
+      <p>Memorise Quran, Hadith &amp; Seerah — together</p>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchAuthTab('login')">Sign In</button>
+      <button class="auth-tab" onclick="switchAuthTab('register')">Register</button>
+    </div>
+    <div id="authError" class="auth-msg auth-error"></div>
+    <div id="authSuccess" class="auth-msg auth-success"></div>
+    <div id="loginForm">
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@email.com" /></div>
+      <div class="field"><label>Password</label><input type="password" id="loginPassword" placeholder="••••••••" onkeydown="if(event.key==='Enter')signIn()" /></div>
+      <button class="btn-primary" onclick="signIn()" id="loginBtn">Sign In</button>
+    </div>
+    <div id="registerForm" class="hidden">
+      <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@email.com" /></div>
+      <div class="field"><label>Password</label><input type="password" id="regPassword" placeholder="Min. 6 characters" /></div>
+      <button class="btn-primary" onclick="signUp()" id="registerBtn">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div class="app hidden" id="mainApp">
+  <div class="header">
+    <div class="header-top">
+      <span class="header-badge">﷽</span>
+      <div class="user-info">
+        <span class="user-email" id="userEmailDisplay"></span>
+        <button class="btn-logout" onclick="signOut()">Sign Out</button>
+      </div>
+    </div>
+    <h1>Dalil Flashcard</h1>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('study')">📖 Study</button>
+    <button class="tab" onclick="switchTab('add')">➕ Add Card</button>
+    <button class="tab" onclick="switchTab('list')">📋 My Cards</button>
+    <button class="tab" onclick="switchTab('shared')">🌐 Shared</button>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-num" id="totalCount">0</div><div class="stat-label">My Cards</div></div>
+    <div class="stat"><div class="stat-num" id="sessionKnew">0</div><div class="stat-label">✅ Knew It</div></div>
+    <div class="stat"><div class="stat-num" id="sessionForgot">0</div><div class="stat-label">❌ Forgot</div></div>
+  </div>
+
+  <!-- STUDY -->
+  <div id="tab-study">
+    <div class="filter-row">
+      <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+      <button class="filter-btn" onclick="setFilter('Quran',this)">📖 Quran</button>
+      <button class="filter-btn" onclick="setFilter('Hadith',this)">📜 Hadith</button>
+      <button class="filter-btn" onclick="setFilter('Seerah',this)">🕌 Seerah</button>
+    </div>
+    <div class="flashcard-section" id="studyArea">
+      <div class="loading"><div class="spinner"></div> Loading cards...</div>
+    </div>
+  </div>
+
+  <!-- ADD CARD -->
+  <div id="tab-add" class="hidden">
+    <div class="add-form">
+      <h3>✦ New Card</h3>
+      <div class="field"><label>Category</label>
+        <select id="newCat">
+          <option value="Quran">📖 Quran</option>
+          <option value="Hadith">📜 Hadith</option>
+          <option value="Seerah">🕌 Seerah</option>
+        </select>
+      </div>
+      <div class="field"><label>Question / Prompt</label><input type="text" id="newQ" placeholder="e.g. What is the dalil for patience?" /></div>
+      <div class="field"><label>Answer / Dalil</label><textarea id="newA" rows="3" placeholder="e.g. QS. Az-Zumar: 10 — Indeed, the patient will be given their reward without account"></textarea></div>
+      <div class="field"><label>Arabic Text (optional)</label><textarea id="newArabic" rows="2" placeholder="إِنَّمَا يُوَفَّى الصَّابِرُونَ أَجْرَهُم بِغَيْرِ حِسَابٍ" style="font-family:Amiri,serif;font-size:18px;direction:rtl;text-align:right;"></textarea></div>
+      <button class="btn-primary" onclick="addCard()" id="addCardBtn">+ Add Card</button>
+    </div>
+  </div>
+
+  <!-- MY CARDS -->
+  <div id="tab-list" class="hidden">
+    <div class="card-list" id="cardList"><div class="loading"><div class="spinner"></div> Loading...</div></div>
+  </div>
+
+  <!-- SHARED DECKS -->
+  <div id="tab-shared" class="hidden">
+    <div class="add-form">
+      <h3>🌐 Create a Shared Deck</h3>
+      <p>Share your cards with your halaqah circle. Anyone can study or import your deck.</p>
+      <div class="field"><label>Deck Title</label><input type="text" id="deckTitle" placeholder="e.g. Hadith on Akhlaq" /></div>
+      <div class="field"><label>Description (optional)</label><input type="text" id="deckDesc" placeholder="e.g. 20 hadith on character and manners" /></div>
+      <p style="font-size:12px;margin-bottom:8px;color:var(--text-dim);">Select cards to include:</p>
+      <div id="deckCardPicker" style="max-height:180px;overflow-y:auto;margin-bottom:14px;"></div>
+      <button class="btn-primary" onclick="createSharedDeck()" id="createDeckBtn">🚀 Publish Deck</button>
+    </div>
+    <div class="divider"></div>
+    <p style="font-size:13px;font-weight:600;color:var(--text-dim);margin-bottom:14px;">📚 All Shared Decks</p>
+    <div id="sharedDeckList" class="deck-grid"><div class="loading"><div class="spinner"></div> Loading decks...</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://zzkxlvffhgbrzzshqbsa.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6a3hsdmZmaGdicnp6c2hxYnNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNjg1NDYsImV4cCI6MjA5Mzc0NDU0Nn0.l7i1u5Kcm_EF7FpbUhRjXT3qJqzX1jOx1XxoSA98nkU';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+let currentUser = null, cards = [], deck = [], current = 0, flipped = false;
+let sessionKnew = 0, sessionForgot = 0, activeFilter = 'all', sharedStudyDeck = null;
+let importedDeckIds = new Set(); // tracks decks already imported this session
+
+// ── AUTH ──
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    currentUser = session.user;
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    document.getElementById('userEmailDisplay').textContent = currentUser.email;
+    await loadCards();
+    buildDeck();
+  } else {
+    currentUser = null;
+    document.getElementById('authScreen').classList.remove('hidden');
+    document.getElementById('mainApp').classList.add('hidden');
+  }
+});
+
+function switchAuthTab(tab) {
+  document.querySelectorAll('.auth-tab').forEach((el,i) => el.classList.toggle('active', ['login','register'][i]===tab));
+  document.getElementById('loginForm').classList.toggle('hidden', tab!=='login');
+  document.getElementById('registerForm').classList.toggle('hidden', tab!=='register');
+  document.getElementById('authError').style.display='none';
+  document.getElementById('authSuccess').style.display='none';
+}
+
+function showAuthMsg(id, msg) {
+  const el = document.getElementById(id); el.textContent=msg; el.style.display='block';
+  document.getElementById(id==='authError'?'authSuccess':'authError').style.display='none';
+}
+
+async function signIn() {
+  const email=document.getElementById('loginEmail').value.trim(), pw=document.getElementById('loginPassword').value;
+  if(!email||!pw){showAuthMsg('authError','Please fill in all fields.');return;}
+  const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='Signing in...';
+  const {error}=await sb.auth.signInWithPassword({email,password:pw});
+  if(error){
+    const msg = error.message.includes('Email not confirmed')
+      ? 'Please confirm your email first. Check your inbox.'
+      : error.message;
+    showAuthMsg('authError', msg);
+    btn.disabled=false; btn.textContent='Sign In';
+  }
+}
+
+async function signUp() {
+  const email=document.getElementById('regEmail').value.trim(), pw=document.getElementById('regPassword').value;
+  if(!email||!pw){showAuthMsg('authError','Please fill in all fields.');return;}
+  if(pw.length<6){showAuthMsg('authError','Password must be at least 6 characters.');return;}
+  const btn=document.getElementById('registerBtn'); btn.disabled=true; btn.textContent='Creating...';
+  const {error}=await sb.auth.signUp({email,password:pw});
+  btn.disabled=false; btn.textContent='Create Account';
+  if(error) showAuthMsg('authError',error.message);
+  else showAuthMsg('authSuccess','✅ Account created! Check your email to confirm, then sign in.');
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  cards=[]; deck=[]; sessionKnew=0; sessionForgot=0; importedDeckIds=new Set();
+}
+
+// ── CARDS ──
+async function loadCards() {
+  const {data,error}=await sb.from('cards').select('*').eq('user_id',currentUser.id).order('created_at',{ascending:false});
+  if(!error) cards=data||[];
+  updateStats();
+}
+
+async function addCard() {
+  const q=document.getElementById('newQ').value.trim(), a=document.getElementById('newA').value.trim();
+  const cat=document.getElementById('newCat').value, arabic=document.getElementById('newArabic').value.trim();
+  if(!q||!a){showToast('Please fill in question and answer!');return;}
+  const btn=document.getElementById('addCardBtn'); btn.disabled=true; btn.textContent='Saving...';
+  const {data,error}=await sb.from('cards').insert([{user_id:currentUser.id,cat,q,a,arabic}]).select().single();
+  btn.disabled=false; btn.textContent='+ Add Card';
+  if(error){showToast('Error saving card: '+error.message);return;}
+  cards.unshift(data); updateStats();
+  document.getElementById('newQ').value='';
+  document.getElementById('newA').value='';
+  document.getElementById('newArabic').value='';
+  showToast('✅ Card added!'); buildDeck();
+}
+
+async function deleteCard(id) {
+  if(!confirm('Delete this card?')) return;
+  const {error}=await sb.from('cards').delete().eq('id',id);
+  if(error){showToast('Error deleting card.');return;}
+  cards=cards.filter(c=>c.id!==id); updateStats(); renderList(); buildDeck();
+  showToast('Card deleted.');
+}
+
+async function saveEditCard(id) {
+  const q=document.getElementById('editQ_'+id).value.trim();
+  const a=document.getElementById('editA_'+id).value.trim();
+  const cat=document.getElementById('editCat_'+id).value;
+  const arabic=document.getElementById('editArabic_'+id).value.trim();
+  if(!q||!a){showToast('Question and answer are required.');return;}
+  const btn=document.getElementById('editSaveBtn_'+id); btn.disabled=true; btn.textContent='Saving...';
+  const {data,error}=await sb.from('cards').update({q,a,cat,arabic}).eq('id',id).select().single();
+  if(error){showToast('Error updating card.'); btn.disabled=false; btn.textContent='Save'; return;}
+  const idx=cards.findIndex(c=>c.id===id);
+  if(idx!==-1) cards[idx]=data;
+  updateStats(); renderList(); buildDeck();
+  showToast('✅ Card updated!');
+}
+
+// ── TABS ──
+function switchTab(tab) {
+  ['study','add','list','shared'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==tab));
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['study','add','list','shared'][i]===tab));
+  if(tab==='list') renderList();
+  if(tab==='study'){sharedStudyDeck=null; buildDeck();}
+  if(tab==='shared') renderSharedTab();
+}
+
+function setFilter(f,btn) {
+  activeFilter=f; sharedStudyDeck=null;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); buildDeck();
+}
+
+// ── STUDY ──
+function buildDeck() {
+  const src=sharedStudyDeck||cards;
+  deck=activeFilter==='all'?[...src]:src.filter(c=>c.cat===activeFilter);
+  for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
+  current=0; flipped=false; renderStudy();
+}
+
+function renderStudy() {
+  const area=document.getElementById('studyArea');
+  if(deck.length===0){
+    const msg=sharedStudyDeck?'No cards in this deck.':'No cards yet.<br>Go to <strong>Add Card</strong> to get started!';
+    area.innerHTML=`<div class="deck-empty"><div class="icon">🃏</div><p>${msg}</p></div>`; return;
+  }
+  if(current>=deck.length){renderDone();return;}
+  const c=deck[current], catClass='cat-'+(c.cat||'').toLowerCase(), prog=(current/deck.length)*100;
+  area.innerHTML=`
+    <div class="progress-row" style="width:100%;max-width:520px">
+      <span class="progress-label">${current+1} / ${deck.length}</span>
+      <span class="progress-label">${sharedStudyDeck?'📚 Shared':c.cat}</span>
+    </div>
+    <div class="progress-bar" style="max-width:520px;width:100%">
+      <div class="progress-fill" style="width:${prog}%"></div>
+    </div>
+    <span class="cat-pill ${catClass}">${c.cat}</span>
+    <div class="card-scene" onclick="flipCard()" id="cardScene">
+      <div class="card-inner" id="cardInner">
+        <div class="card-face card-front">
+          <div class="card-hint">tap to flip 👆</div>
+          <div class="card-q">${escHtml(c.q)}</div>
+        </div>
+        <div class="card-face card-back">
+          <div class="card-hint">Answer</div>
+          <div class="card-a">
+            ${c.arabic?`<span class="arabic">${escHtml(c.arabic)}</span>`:''}
+            ${escHtml(c.a)}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="action-row" id="actionRow" style="display:none;max-width:520px;width:100%">
+      <button class="btn-result btn-forgot" onclick="markCard(false)">❌ Forgot</button>
+      <button class="btn-result btn-knew" onclick="markCard(true)">✅ Knew It</button>
+    </div>
+    <div class="nav-row" style="max-width:520px;width:100%">
+      <button class="btn-nav" onclick="prevCard()">← Previous</button>
+      <button class="btn-nav" onclick="skipCard()">Skip →</button>
+    </div>`;
+  flipped=false;
+}
+
+function flipCard() {
+  const inner=document.getElementById('cardInner'), actions=document.getElementById('actionRow');
+  if(!inner)return; flipped=!flipped;
+  inner.classList.toggle('flipped',flipped);
+  if(flipped&&actions) actions.style.display='flex';
+}
+
+function markCard(knew) {
+  if(knew) sessionKnew++; else sessionForgot++;
+  updateStats(); current++; flipped=false; renderStudy();
+}
+
+function skipCard(){current++;flipped=false;renderStudy();}
+function prevCard(){if(current>0){current--;flipped=false;renderStudy();}}
+
+function renderDone() {
+  const area=document.getElementById('studyArea');
+  const total=sessionKnew+sessionForgot, pct=total>0?Math.round((sessionKnew/total)*100):0;
+  area.innerHTML=`
+    <div class="done-screen">
+      <div class="icon">${pct>=70?'🎉':'💪'}</div>
+      <h2>${pct>=70?'MashaAllah!':'Keep going!'}</h2>
+      <p>You reviewed all ${deck.length} cards.<br>Session score: <strong>${pct}%</strong></p>
+      <div class="score-display">
+        <div class="score-box knew"><div class="num">${sessionKnew}</div><div class="lbl">✅ Knew It</div></div>
+        <div class="score-box forgot"><div class="num">${sessionForgot}</div><div class="lbl">❌ Forgot</div></div>
+      </div>
+      <button class="btn-primary" style="max-width:200px;margin:0 auto;" onclick="restartSession()">🔄 Restart</button>
+    </div>`;
+}
+
+function restartSession(){sessionKnew=0;sessionForgot=0;updateStats();buildDeck();}
+
+// ── MY CARDS LIST ──
+function renderList() {
+  const list=document.getElementById('cardList');
+  if(cards.length===0){list.innerHTML='<div class="deck-empty"><div class="icon">📭</div><p>No cards yet.</p></div>';return;}
+  list.innerHTML=cards.map(c=>`
+    <div class="list-item" id="item_${c.id}">
+      <div class="list-item-top">
+        <div class="list-item-content">
+          <div class="list-item-q">${escHtml(c.q)}</div>
+          <div class="list-item-a">${escHtml(c.a)}</div>
+        </div>
+        <div class="list-item-actions">
+          <span class="cat-pill cat-${(c.cat||'').toLowerCase()}" style="font-size:10px;padding:3px 8px;">${c.cat}</span>
+          <button class="btn-edit" onclick="toggleEdit('${c.id}')">✏️ Edit</button>
+          <button class="btn-delete" onclick="deleteCard('${c.id}')">✕</button>
+        </div>
+      </div>
+      <div class="edit-form hidden" id="editForm_${c.id}">
+        <div class="field">
+          <label>Category</label>
+          <select id="editCat_${c.id}">
+            <option value="Quran" ${c.cat==='Quran'?'selected':''}>📖 Quran</option>
+            <option value="Hadith" ${c.cat==='Hadith'?'selected':''}>📜 Hadith</option>
+            <option value="Seerah" ${c.cat==='Seerah'?'selected':''}>🕌 Seerah</option>
+          </select>
+        </div>
+        <div class="field"><label>Question</label><input type="text" id="editQ_${c.id}" value="${escAttr(c.q)}" /></div>
+        <div class="field"><label>Answer</label><textarea id="editA_${c.id}" rows="2">${escHtml(c.a)}</textarea></div>
+        <div class="field"><label>Arabic (optional)</label><textarea id="editArabic_${c.id}" rows="2" style="font-family:Amiri,serif;font-size:17px;direction:rtl;text-align:right;">${escHtml(c.arabic||'')}</textarea></div>
+        <div class="edit-actions">
+          <button class="btn-cancel" onclick="toggleEdit('${c.id}')">Cancel</button>
+          <button class="btn-save" id="editSaveBtn_${c.id}" onclick="saveEditCard('${c.id}')">Save</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function toggleEdit(id) {
+  const form=document.getElementById('editForm_'+id);
+  form.classList.toggle('hidden');
+}
+
+// ── SHARED DECKS ──
+async function renderSharedTab() {
+  const picker=document.getElementById('deckCardPicker');
+  if(cards.length===0) picker.innerHTML='<p style="font-size:12px;color:var(--text-muted)">Add some cards first!</p>';
+  else picker.innerHTML=cards.map(c=>`
+    <label style="display:flex;align-items:center;gap:8px;padding:7px 0;cursor:pointer;border-bottom:1px solid var(--border);">
+      <input type="checkbox" value="${c.id}" style="accent-color:var(--gold);width:14px;height:14px;" checked />
+      <span style="font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(c.q)}</span>
+      <span class="cat-pill cat-${(c.cat||'').toLowerCase()}" style="font-size:9px;padding:2px 6px;flex-shrink:0">${c.cat}</span>
+    </label>`).join('');
+
+  const listEl=document.getElementById('sharedDeckList');
+  listEl.innerHTML='<div class="loading"><div class="spinner"></div> Loading decks...</div>';
+  const {data:decks,error}=await sb.from('shared_decks').select('*').order('created_at',{ascending:false});
+  if(error){listEl.innerHTML='<p style="color:var(--red);font-size:13px;">Error loading decks.</p>';return;}
+  if(!decks||decks.length===0){listEl.innerHTML='<div class="deck-empty"><div class="icon">📭</div><p>No shared decks yet.<br>Create one above!</p></div>';return;}
+
+  listEl.innerHTML=decks.map(d=>{
+    const mine=d.owner_id===currentUser.id;
+    const alreadyImported=importedDeckIds.has(d.id);
+    const count=d.card_count||0;
+    return `<div class="deck-card">
+      <div class="deck-card-header">
+        <div class="deck-card-title">${escHtml(d.title)}</div>
+        ${mine?'<span class="own-badge">You</span>':alreadyImported?'<span class="imported-badge">✅ Imported</span>':''}
+      </div>
+      ${d.description?`<div class="deck-card-desc">${escHtml(d.description)}</div>`:''}
+      <div class="deck-card-meta">${count} card${count===1?'':'s'}</div>
+      <div class="deck-card-footer">
+        <button class="btn-small btn-study-deck" onclick="studySharedDeck('${d.id}')">📖 Study</button>
+        <button class="btn-small btn-import-deck" id="importBtn_${d.id}" onclick="importSharedDeck('${d.id}')" ${alreadyImported?'disabled':''}>
+          ${alreadyImported?'✅ Imported':'⬇️ Import'}
+        </button>
+        ${mine?`<button class="btn-small btn-delete-deck" onclick="deleteSharedDeck('${d.id}')">🗑️ Delete</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function createSharedDeck() {
+  const title=document.getElementById('deckTitle').value.trim(), desc=document.getElementById('deckDesc').value.trim();
+  if(!title){showToast('Please enter a deck title.');return;}
+  const selectedIds=[...document.querySelectorAll('#deckCardPicker input:checked')].map(el=>el.value);
+  if(selectedIds.length===0){showToast('Select at least one card.');return;}
+  const btn=document.getElementById('createDeckBtn'); btn.disabled=true; btn.textContent='Publishing...';
+  const {data:d,error:e1}=await sb.from('shared_decks').insert([{owner_id:currentUser.id,title,description:desc}]).select().single();
+  if(e1){showToast('Error creating deck.'); btn.disabled=false; btn.textContent='🚀 Publish Deck'; return;}
+  const sc=cards.filter(c=>selectedIds.includes(c.id)).map(c=>({deck_id:d.id,cat:c.cat,q:c.q,a:c.a,arabic:c.arabic||''}));
+  const {error:e2}=await sb.from('shared_cards').insert(sc);
+  if(e2){showToast('Error adding cards to deck.'); btn.disabled=false; btn.textContent='🚀 Publish Deck'; return;}
+  btn.disabled=false; btn.textContent='🚀 Publish Deck';
+  document.getElementById('deckTitle').value=''; document.getElementById('deckDesc').value='';
+  showToast(`✅ Deck "${title}" published!`); renderSharedTab();
+}
+
+async function studySharedDeck(deckId) {
+  const {data,error}=await sb.from('shared_cards').select('*').eq('deck_id',deckId);
+  if(error||!data){showToast('Error loading deck.');return;}
+  sharedStudyDeck=data; activeFilter='all';
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  switchTab('study'); buildDeck(); showToast('📖 Studying shared deck...');
+}
+
+async function importSharedDeck(deckId) {
+  // Prevent re-importing
+  if(importedDeckIds.has(deckId)){showToast('Already imported this session!');return;}
+  const btn=document.getElementById('importBtn_'+deckId);
+  if(btn){btn.disabled=true; btn.textContent='Importing...';}
+
+  const {data,error}=await sb.from('shared_cards').select('*').eq('deck_id',deckId);
+  if(error||!data){showToast('Error loading deck.');if(btn){btn.disabled=false;btn.textContent='⬇️ Import';}return;}
+  const toInsert=data.map(c=>({user_id:currentUser.id,cat:c.cat,q:c.q,a:c.a,arabic:c.arabic||''}));
+  const {data:inserted,error:e2}=await sb.from('cards').insert(toInsert).select();
+  if(e2){showToast('Error importing.');if(btn){btn.disabled=false;btn.textContent='⬇️ Import';}return;}
+  cards=[...inserted,...cards]; updateStats();
+  importedDeckIds.add(deckId); // mark so we don't import again
+  if(btn){btn.textContent='✅ Imported';}
+  showToast(`✅ ${inserted.length} cards imported!`);
+}
+
+async function deleteSharedDeck(deckId) {
+  if(!confirm('Delete this shared deck? This cannot be undone.')) return;
+  const {error}=await sb.from('shared_decks').delete().eq('id',deckId);
+  if(error){showToast('Error deleting deck.');return;}
+  showToast('Deck deleted.'); renderSharedTab();
+}
+
+// ── UTILS ──
+function updateStats() {
+  document.getElementById('totalCount').textContent=cards.length;
+  document.getElementById('sessionKnew').textContent=sessionKnew;
+  document.getElementById('sessionForgot').textContent=sessionForgot;
+}
+
+function showToast(msg) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+function escHtml(s) {
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function escAttr(s) {
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>

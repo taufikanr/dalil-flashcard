@@ -302,7 +302,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
     document.getElementById('authScreen').classList.add('hidden');
     document.getElementById('mainApp').classList.remove('hidden');
     document.getElementById('userEmailDisplay').textContent = currentUser.email;
-    await loadCards();
+    buildDeck();
+    try { await loadCards(); } catch(e) { console.error('loadCards failed:', e); }
     buildDeck();
   } else {
     currentUser = null;

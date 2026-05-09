@@ -371,15 +371,28 @@ async function addCard() {
   const q=document.getElementById('newQ').value.trim(), a=document.getElementById('newA').value.trim();
   const cat=document.getElementById('newCat').value, arabic=document.getElementById('newArabic').value.trim();
   if(!q||!a){showToast('Please fill in question and answer!');return;}
-  const btn=document.getElementById('addCardBtn'); btn.disabled=true; btn.textContent='Saving...';
-  const {data,error}=await sb.from('cards').insert([{user_id:currentUser.id,cat,q,a,arabic}]).select().single();
-  btn.disabled=false; btn.textContent='+ Add Card';
-  if(error){showToast('Error saving card: '+error.message);return;}
-  cards.unshift(data); updateStats();
+  const btn=document.getElementById('addCardBtn'); btn.disabled=true;
+
+  // Optimistic update — show card instantly, save in background
+  const tempCard={id:'temp_'+Date.now(),user_id:currentUser.id,cat,q,a,arabic,created_at:new Date().toISOString()};
+  cards.unshift(tempCard); updateStats();
   document.getElementById('newQ').value='';
   document.getElementById('newA').value='';
   document.getElementById('newArabic').value='';
   showToast('✅ Card added!'); buildDeck();
+  btn.disabled=false; btn.textContent='+ Add Card';
+
+  // Save to DB in background
+  const {data,error}=await sb.from('cards').insert([{user_id:currentUser.id,cat,q,a,arabic}]).select().single();
+  if(error){
+    // Rollback if save failed
+    cards=cards.filter(c=>c.id!==tempCard.id); updateStats(); buildDeck();
+    showToast('❌ Error saving card: '+error.message);
+    return;
+  }
+  // Replace temp ID with real DB record
+  const idx=cards.findIndex(c=>c.id===tempCard.id);
+  if(idx!==-1) cards[idx]=data;
 }
 
 async function deleteCard(id) {

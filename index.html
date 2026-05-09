@@ -465,7 +465,7 @@ async function signUp() {
   if(!email||!pw){showAuthMsg('authError','Please fill in all fields.');return;}
   if(pw.length<6){showAuthMsg('authError','Password must be at least 6 characters.');return;}
   const btn=document.getElementById('registerBtn'); btn.disabled=true; btn.textContent='Creating...';
-  const {data,error}=await sb.auth.signUp({email,password:pw});
+  const {data,error}=await sb.auth.signUp({email,password:pw,options:{emailRedirectTo:window.location.origin}});
   btn.disabled=false; btn.textContent='Create Account';
   if(error){showAuthMsg('authError',error.message);return;}
   if(!data.user||data.user.identities?.length===0){

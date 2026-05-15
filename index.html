@@ -107,9 +107,12 @@
   .nav-row { display: flex; gap: 10px; width: 100%; max-width: 520px; }
   .btn-nav { flex: 1; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text-dim); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
   .btn-nav:hover { border-color: var(--gold); color: var(--gold); }
-  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; scroll-padding: 0 8px; }
+  .filter-row::-webkit-scrollbar { display: none; }
+  .filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; flex-shrink: 0; white-space: nowrap; }
   .filter-btn.active { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
+  .filter-btn.filter-add { border-style: dashed; color: var(--gold); border-color: rgba(201,168,76,0.5); }
+  .filter-btn.filter-add:hover { background: var(--gold-dim); border-color: var(--gold); }
   .filter-row.deck-row .filter-btn { font-size: 11px; padding: 5px 12px; }
   .filter-row.deck-row { gap: 6px; margin-bottom: 12px; }
   .deck-source { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
@@ -485,11 +488,48 @@ function signOut() {
 }
 
 // ── TYPES (categories) ──
+// Custom types live in localStorage so an empty deck can exist before any card uses it.
+// Once a card uses a type, the type also appears via cards[].cat — both sources are merged.
+function customTypesKey() { return `dalil_custom_types_${currentUser?.id||'guest'}`; }
+function getStoredCustomTypes() {
+  try { return JSON.parse(localStorage.getItem(customTypesKey()) || '[]'); }
+  catch { return []; }
+}
+function addStoredCustomType(name) {
+  const list = getStoredCustomTypes();
+  if(!list.includes(name)) { list.push(name); localStorage.setItem(customTypesKey(), JSON.stringify(list)); }
+}
+
 // Returns ordered list of {name, emoji} — defaults first, then user's custom types alphabetically.
 function getAllTypes() {
-  const used = [...new Set(cards.map(c=>c.cat).filter(Boolean))];
-  const customs = used.filter(n=>!DEFAULT_NAMES.includes(n)).sort((a,b)=>a.localeCompare(b));
+  const fromCards = cards.map(c=>c.cat).filter(Boolean);
+  const fromStorage = getStoredCustomTypes();
+  const set = new Set([...fromCards, ...fromStorage]);
+  const customs = [...set].filter(n=>!DEFAULT_NAMES.includes(n)).sort((a,b)=>a.localeCompare(b));
   return [...DEFAULT_TYPES, ...customs.map(name=>({name, emoji:''}))];
+}
+
+function addNewTypePrompt(target) {
+  const raw = prompt('Name your new category (e.g. Fiqh, Aqidah, Arabic Vocab):');
+  if(raw===null) return;
+  const name = raw.trim();
+  if(!name){ showToast('Category name cannot be empty.'); return; }
+  if(name.length>40){ showToast('Name is too long (max 40 chars).'); return; }
+  const existing = getAllTypes().map(t=>t.name.toLowerCase());
+  if(existing.includes(name.toLowerCase())){ showToast('That category already exists.'); return; }
+  addStoredCustomType(name);
+  // Switch the relevant filter to the new category so it's immediately visible
+  if(target==='list'){ listCatFilter=name; activeListDeckId=null; }
+  else { activeFilter=name; activeStudyDeckId=null; sharedStudyDeck=null; }
+  renderTypeUI();
+  renderStudyDeckFilter(); renderListDeckFilter();
+  buildDeck(); renderList();
+  // Scroll the row so the new pill is visible (it sits just before "+ New")
+  requestAnimationFrame(()=>{
+    const row = document.getElementById(target==='list'?'listCatFilterRow':'studyCatFilterRow');
+    if(row) row.scrollLeft = row.scrollWidth;
+  });
+  showToast(`✅ "${name}" added — start adding cards to it!`);
 }
 
 function getCatLabel(cat) {
@@ -512,7 +552,8 @@ function renderTypeUI() {
   if(sRow){
     sRow.innerHTML = [
       `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all',this)">All</button>`,
-      ...types.map(t=>`<button class="filter-btn ${activeFilter===t.name?'active':''}" onclick="setFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`)
+      ...types.map(t=>`<button class="filter-btn ${activeFilter===t.name?'active':''}" onclick="setFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`),
+      `<button class="filter-btn filter-add" onclick="addNewTypePrompt('study')" title="Add new category">+ New</button>`
     ].join('');
   }
   // My Cards category filter row
@@ -520,7 +561,8 @@ function renderTypeUI() {
   if(lRow){
     lRow.innerHTML = [
       `<button class="filter-btn ${listCatFilter==='all'?'active':''}" onclick="setListFilter('all',this)">All</button>`,
-      ...types.map(t=>`<button class="filter-btn ${listCatFilter===t.name?'active':''}" onclick="setListFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`)
+      ...types.map(t=>`<button class="filter-btn ${listCatFilter===t.name?'active':''}" onclick="setListFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`),
+      `<button class="filter-btn filter-add" onclick="addNewTypePrompt('list')" title="Add new category">+ New</button>`
     ].join('');
   }
 }

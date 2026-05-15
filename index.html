@@ -85,6 +85,7 @@
   .cat-quran { background: rgba(201,168,76,0.15); color: var(--gold); }
   .cat-hadith { background: rgba(76,175,130,0.15); color: var(--green); }
   .cat-seerah { background: rgba(130,100,200,0.15); color: #a889e0; }
+  .cat-custom { background: rgba(100,160,220,0.12); color: #7ab0e0; }
   .card-scene { width: 100%; max-width: 520px; min-height: 280px; perspective: 1200px; margin-bottom: 20px; cursor: pointer; }
   .card-inner { width: 100%; min-height: 280px; position: relative; transform-style: preserve-3d; transition: transform 0.55s cubic-bezier(0.4,0.2,0.2,1); }
   .card-inner.flipped { transform: rotateY(180deg); }
@@ -277,12 +278,7 @@
 
   <!-- STUDY -->
   <div id="tab-study">
-    <div class="filter-row">
-      <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
-      <button class="filter-btn" onclick="setFilter('Quran',this)">📖 Quran</button>
-      <button class="filter-btn" onclick="setFilter('Hadith',this)">📜 Hadith</button>
-      <button class="filter-btn" onclick="setFilter('Seerah',this)">🕌 Seerah</button>
-    </div>
+    <div class="filter-row" id="studyCatFilterRow"></div>
     <div class="filter-row" id="studyDeckFilterRow"></div>
     <div class="flashcard-section" id="studyArea">
       <div class="loading"><div class="spinner"></div> Loading cards...</div>
@@ -294,11 +290,9 @@
     <div class="add-form">
       <h3>✦ New Card</h3>
       <div class="field"><label>Category</label>
-        <select id="newCat">
-          <option value="Quran">📖 Quran</option>
-          <option value="Hadith">📜 Hadith</option>
-          <option value="Seerah">🕌 Seerah</option>
-        </select>
+        <input type="text" id="newCat" list="typeList" value="Quran" autocomplete="off" placeholder="Pick or type a new type (e.g. Fiqh, Arabic Vocab)" />
+        <datalist id="typeList"></datalist>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Use a default (Quran, Hadith, Seerah) or create your own — it'll appear as a filter automatically.</div>
       </div>
       <div class="field"><label>Question / Prompt</label><input type="text" id="newQ" placeholder="e.g. What is the dalil for patience?" /></div>
       <div class="field"><label>Answer / Dalil</label><textarea id="newA" rows="3" placeholder="e.g. QS. Az-Zumar: 10 — Indeed, the patient will be given their reward without account"></textarea></div>
@@ -309,12 +303,7 @@
 
   <!-- MY CARDS -->
   <div id="tab-list" class="hidden">
-    <div class="filter-row" id="listCatFilterRow">
-      <button class="filter-btn active" onclick="setListFilter('all',this)">All</button>
-      <button class="filter-btn" onclick="setListFilter('Quran',this)">📖 Quran</button>
-      <button class="filter-btn" onclick="setListFilter('Hadith',this)">📜 Hadith</button>
-      <button class="filter-btn" onclick="setListFilter('Seerah',this)">🕌 Seerah</button>
-    </div>
+    <div class="filter-row" id="listCatFilterRow"></div>
     <div class="filter-row" id="listDeckFilterRow"></div>
     <div class="card-list" id="cardList"><div class="loading"><div class="spinner"></div> Loading...</div></div>
   </div>
@@ -388,6 +377,13 @@ function withTimeout(promise, ms, label) {
   ]);
 }
 
+const DEFAULT_TYPES = [
+  {name:'Quran',  emoji:'📖'},
+  {name:'Hadith', emoji:'📜'},
+  {name:'Seerah', emoji:'🕌'},
+];
+const DEFAULT_NAMES = DEFAULT_TYPES.map(t=>t.name);
+
 let currentUser = null, cards = [], deck = [], current = 0, flipped = false;
 let sessionKnew = 0, sessionForgot = 0, activeFilter = 'all', sharedStudyDeck = null;
 let importedDeckIds = new Set(); // tracks decks already imported this session
@@ -403,8 +399,10 @@ async function enterApp(user) {
   document.getElementById('authScreen').classList.add('hidden');
   document.getElementById('mainApp').classList.remove('hidden');
   document.getElementById('userEmailDisplay').textContent = currentUser.email;
+  renderTypeUI();
   buildDeck();
   await loadCards();
+  renderTypeUI();
   buildDeck();
 }
 
@@ -486,6 +484,47 @@ function signOut() {
   window.location.reload();
 }
 
+// ── TYPES (categories) ──
+// Returns ordered list of {name, emoji} — defaults first, then user's custom types alphabetically.
+function getAllTypes() {
+  const used = [...new Set(cards.map(c=>c.cat).filter(Boolean))];
+  const customs = used.filter(n=>!DEFAULT_NAMES.includes(n)).sort((a,b)=>a.localeCompare(b));
+  return [...DEFAULT_TYPES, ...customs.map(name=>({name, emoji:''}))];
+}
+
+function getCatLabel(cat) {
+  const t = DEFAULT_TYPES.find(t=>t.name===cat);
+  return t ? `${t.emoji} ${t.name}` : (cat||'');
+}
+
+function getCatPillClass(cat) {
+  return DEFAULT_NAMES.includes(cat) ? 'cat-'+cat.toLowerCase() : 'cat-custom';
+}
+
+// Re-render datalist + category filter rows. Call after any change to `cards`.
+function renderTypeUI() {
+  const types = getAllTypes();
+  // Datalist for combobox inputs (Add Card + inline Edit)
+  const dl = document.getElementById('typeList');
+  if(dl) dl.innerHTML = types.map(t=>`<option value="${escAttr(t.name)}">`).join('');
+  // Study category filter row
+  const sRow = document.getElementById('studyCatFilterRow');
+  if(sRow){
+    sRow.innerHTML = [
+      `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all',this)">All</button>`,
+      ...types.map(t=>`<button class="filter-btn ${activeFilter===t.name?'active':''}" onclick="setFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`)
+    ].join('');
+  }
+  // My Cards category filter row
+  const lRow = document.getElementById('listCatFilterRow');
+  if(lRow){
+    lRow.innerHTML = [
+      `<button class="filter-btn ${listCatFilter==='all'?'active':''}" onclick="setListFilter('all',this)">All</button>`,
+      ...types.map(t=>`<button class="filter-btn ${listCatFilter===t.name?'active':''}" onclick="setListFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`)
+    ].join('');
+  }
+}
+
 // ── CARDS ──
 async function loadCards() {
   try {
@@ -504,8 +543,9 @@ async function loadCards() {
 
 async function addCard() {
   const q=document.getElementById('newQ').value.trim(), a=document.getElementById('newA').value.trim();
-  const cat=document.getElementById('newCat').value, arabic=document.getElementById('newArabic').value.trim();
+  const cat=document.getElementById('newCat').value.trim(), arabic=document.getElementById('newArabic').value.trim();
   if(!q||!a){showToast('Please fill in question and answer!');return;}
+  if(!cat){showToast('Please pick or type a category.');return;}
   const btn=document.getElementById('addCardBtn'); btn.disabled=true;
 
   // Optimistic update — show card instantly, save in background
@@ -514,6 +554,7 @@ async function addCard() {
   document.getElementById('newQ').value='';
   document.getElementById('newA').value='';
   document.getElementById('newArabic').value='';
+  renderTypeUI();
   showToast('✅ Card added!'); buildDeck();
   btn.disabled=false; btn.textContent='+ Add Card';
 
@@ -521,7 +562,7 @@ async function addCard() {
   const {data,error}=await sb.from('cards').insert([{user_id:currentUser.id,cat,q,a,arabic}]).select().single();
   if(error){
     // Rollback if save failed
-    cards=cards.filter(c=>c.id!==tempCard.id); updateStats(); buildDeck();
+    cards=cards.filter(c=>c.id!==tempCard.id); updateStats(); renderTypeUI(); buildDeck();
     showToast('❌ Error saving card: '+error.message);
     return;
   }
@@ -534,22 +575,23 @@ async function deleteCard(id) {
   if(!confirm('Delete this card?')) return;
   const {error}=await sb.from('cards').delete().eq('id',id);
   if(error){showToast('Error deleting card.');return;}
-  cards=cards.filter(c=>c.id!==id); updateStats(); renderList(); buildDeck();
+  cards=cards.filter(c=>c.id!==id); updateStats(); renderTypeUI(); renderList(); buildDeck();
   showToast('Card deleted.');
 }
 
 async function saveEditCard(id) {
   const q=document.getElementById('editQ_'+id).value.trim();
   const a=document.getElementById('editA_'+id).value.trim();
-  const cat=document.getElementById('editCat_'+id).value;
+  const cat=document.getElementById('editCat_'+id).value.trim();
   const arabic=document.getElementById('editArabic_'+id).value.trim();
   if(!q||!a){showToast('Question and answer are required.');return;}
+  if(!cat){showToast('Category cannot be empty.');return;}
   const btn=document.getElementById('editSaveBtn_'+id); btn.disabled=true; btn.textContent='Saving...';
   const {data,error}=await sb.from('cards').update({q,a,cat,arabic}).eq('id',id).select().single();
   if(error){showToast('Error updating card.'); btn.disabled=false; btn.textContent='Save'; return;}
   const idx=cards.findIndex(c=>c.id===id);
   if(idx!==-1) cards[idx]=data;
-  updateStats(); renderList(); buildDeck();
+  updateStats(); renderTypeUI(); renderList(); buildDeck();
   showToast('✅ Card updated!');
 }
 
@@ -564,9 +606,7 @@ function switchTab(tab) {
 
 function setFilter(f,btn) {
   activeFilter=f; sharedStudyDeck=null; activeStudyDeckId=null;
-  // Only reset highlights inside the category row, not the deck row
-  document.querySelectorAll('#tab-study > .filter-row:first-child .filter-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
+  renderTypeUI();
   renderStudyDeckFilter(); buildDeck();
 }
 
@@ -634,7 +674,7 @@ function renderStudy() {
     area.innerHTML=`<div class="deck-empty"><div class="icon">📖</div><p>${msg}</p></div>`; return;
   }
   if(current>=deck.length){renderDone();return;}
-  const c=deck[current], catClass='cat-'+(c.cat||'').toLowerCase(), prog=(current/deck.length)*100;
+  const c=deck[current], catClass=getCatPillClass(c.cat), prog=(current/deck.length)*100;
   area.innerHTML=`
     <div class="progress-row" style="width:100%;max-width:520px">
       <span class="progress-label">${current+1} / ${deck.length}</span>
@@ -706,8 +746,7 @@ function restartSession(){sessionKnew=0;sessionForgot=0;updateStats();buildDeck(
 // ── MY CARDS LIST ──
 function setListFilter(f,btn) {
   listCatFilter=f; activeListDeckId=null;
-  document.querySelectorAll('#listCatFilterRow .filter-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
+  renderTypeUI();
   renderListDeckFilter(); renderList();
 }
 function setListDeckFilter(deckId,btn) {
@@ -748,7 +787,7 @@ function renderList() {
           ${c.source_deck_id?`<div class="deck-source">📚 from <strong>${escHtml(c.source_deck_title||'shared deck')}</strong>${c.source_owner_email?` · by ${escHtml(c.source_owner_email)}`:''}</div>`:''}
         </div>
         <div class="list-item-actions">
-          <span class="cat-pill cat-${(c.cat||'').toLowerCase()}" style="font-size:10px;padding:3px 8px;">${c.cat}</span>
+          <span class="cat-pill ${getCatPillClass(c.cat)}" style="font-size:10px;padding:3px 8px;">${escHtml(c.cat||'')}</span>
           <button class="btn-edit" onclick="toggleEdit('${c.id}')">✏️ Edit</button>
           <button class="btn-delete" onclick="deleteCard('${c.id}')">✕</button>
         </div>
@@ -756,11 +795,7 @@ function renderList() {
       <div class="edit-form hidden" id="editForm_${c.id}">
         <div class="field">
           <label>Category</label>
-          <select id="editCat_${c.id}">
-            <option value="Quran" ${c.cat==='Quran'?'selected':''}>📖 Quran</option>
-            <option value="Hadith" ${c.cat==='Hadith'?'selected':''}>📜 Hadith</option>
-            <option value="Seerah" ${c.cat==='Seerah'?'selected':''}>🕌 Seerah</option>
-          </select>
+          <input type="text" id="editCat_${c.id}" list="typeList" value="${escAttr(c.cat||'')}" autocomplete="off" placeholder="e.g. Quran, Fiqh, Arabic Vocab" />
         </div>
         <div class="field"><label>Question</label><input type="text" id="editQ_${c.id}" value="${escAttr(c.q)}" /></div>
         <div class="field"><label>Answer</label><textarea id="editA_${c.id}" rows="2">${escHtml(c.a)}</textarea></div>
@@ -786,7 +821,7 @@ async function renderSharedTab() {
     <label style="display:flex;align-items:center;gap:8px;padding:7px 0;cursor:pointer;border-bottom:1px solid var(--border);">
       <input type="checkbox" value="${c.id}" style="accent-color:var(--gold);width:14px;height:14px;" checked />
       <span style="font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(c.q)}</span>
-      <span class="cat-pill cat-${(c.cat||'').toLowerCase()}" style="font-size:9px;padding:2px 6px;flex-shrink:0">${c.cat}</span>
+      <span class="cat-pill ${getCatPillClass(c.cat)}" style="font-size:9px;padding:2px 6px;flex-shrink:0">${escHtml(c.cat||'')}</span>
     </label>`).join('');
 
   const listEl=document.getElementById('sharedDeckList');
@@ -876,7 +911,8 @@ async function importSharedDeck(deckId) {
   cards=[...inserted,...cards]; updateStats();
   importedDeckIds.add(deckId);
   if(btn){btn.textContent='✅ Imported'; btn.disabled=true;}
-  // Refresh deck-filter pills so the newly imported deck shows up
+  // Refresh type + deck-filter pills so newly imported categories/decks show up
+  renderTypeUI();
   renderStudyDeckFilter(); renderListDeckFilter();
   showToast(`✅ ${inserted.length} cards imported!`);
 }
@@ -894,6 +930,7 @@ async function deleteImportedDeck(deckId) {
   if(activeStudyDeckId===deckId) activeStudyDeckId=null;
   if(activeListDeckId===deckId) activeListDeckId=null;
   updateStats();
+  renderTypeUI();
   renderStudyDeckFilter(); renderListDeckFilter();
   buildDeck(); renderList();
   showToast(`🗑 "${name}" removed.`);

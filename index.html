@@ -65,13 +65,19 @@
 
   /* HEADER */
   .header { margin-bottom: 28px; }
-  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .header-badge { font-family: 'Amiri', serif; font-size: 20px; color: var(--gold); opacity: 0.8; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+  .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex-shrink: 1; }
+  .header-badge { font-family: 'Amiri', serif; font-size: 20px; color: var(--gold); opacity: 0.8; flex-shrink: 0; }
   .header h1 { font-size: 20px; font-weight: 700; text-align: center; }
-  .user-info { display: flex; align-items: center; gap: 8px; }
-  .user-email { font-size: 11px; color: var(--text-dim); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-info { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .user-email { font-size: 11px; color: var(--text-dim); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .btn-logout { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; transition: all 0.2s; white-space: nowrap; flex-shrink: 0; }
   .btn-logout:hover { border-color: var(--red); color: var(--red); }
+  .streak-badge { font-size: 11px; font-weight: 700; color: var(--gold); background: rgba(201,168,76,0.12); border: 1px solid rgba(201,168,76,0.35); padding: 3px 9px; border-radius: 12px; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; flex-shrink: 0; animation: streakPulse 2.4s ease-in-out infinite; }
+  @keyframes streakPulse { 0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,0.0);} 50%{box-shadow:0 0 0 4px rgba(201,168,76,0.08);} }
+  .btn-icon { padding: 4px 9px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); font-size: 13px; line-height: 1; cursor: pointer; font-family: inherit; transition: all 0.2s; flex-shrink: 0; }
+  .btn-icon:hover { border-color: var(--gold); color: var(--gold); }
+  .btn-icon.active { color: var(--gold); border-color: var(--gold); background: var(--gold-dim); }
 
   /* TABS */
   .tabs { display: flex; background: var(--surface); border-radius: 12px; padding: 4px; margin-bottom: 24px; border: 1px solid var(--border); gap: 2px; }
@@ -86,6 +92,10 @@
   .stat.clickable { cursor: pointer; }
   .stat.clickable:hover { border-color: var(--gold-dim); }
   .stat.clickable:active { transform: scale(0.98); }
+  .stat-num.bump-knew { animation: bumpKnew 0.45s cubic-bezier(0.34,1.56,0.64,1); }
+  .stat-num.bump-forgot { animation: bumpForgot 0.45s cubic-bezier(0.34,1.56,0.64,1); }
+  @keyframes bumpKnew { 0%{transform:scale(1);color:var(--gold);} 40%{transform:scale(1.4);color:var(--green);} 100%{transform:scale(1);color:var(--gold);} }
+  @keyframes bumpForgot { 0%{transform:scale(1);color:var(--gold);} 40%{transform:scale(1.4) rotate(-3deg);color:var(--red);} 100%{transform:scale(1);color:var(--gold);} }
 
   /* SESSION LOG MODAL */
   .session-log-list { max-height: 60vh; overflow-y: auto; margin-bottom: 14px; }
@@ -124,6 +134,13 @@
   .card-back { background: var(--card); border: 1px solid var(--gold); transform: rotateY(180deg); }
   .card-back::before { content: ''; position: absolute; inset: 0; border-radius: var(--radius); background: radial-gradient(circle at 70% 70%, rgba(201,168,76,0.08), transparent 60%); pointer-events: none; }
   .card-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; letter-spacing: 0.5px; }
+  .kbd-hint { font-size: 10px; color: var(--text-muted); margin-top: 8px; letter-spacing: 0.3px; opacity: 0.55; text-align: center; }
+  .kbd-hint kbd { background: var(--surface); border: 1px solid var(--border); border-bottom-width: 2px; padding: 1px 5px; border-radius: 4px; font-size: 9px; font-family: 'Plus Jakarta Sans', monospace; color: var(--text-dim); margin: 0 1px; }
+  @media (hover: none) and (pointer: coarse) { .kbd-hint { display: none; } }
+  .card-scene { transition: transform 0.15s ease, opacity 0.15s ease; }
+  .card-scene.swipe-knew { transform: translateX(60%) rotate(8deg); opacity: 0; }
+  .card-scene.swipe-forgot { transform: translateX(-60%) rotate(-8deg); opacity: 0; }
+  .confetti-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 999; }
   .card-q { font-size: 17px; font-weight: 600; color: var(--text); line-height: 1.5; }
   .card-a { font-size: 15px; color: var(--text); line-height: 1.6; }
   .card-a .arabic { font-family: 'Amiri', serif; font-size: 20px; color: var(--gold-light); display: block; margin-bottom: 10px; line-height: 1.8; direction: rtl; }
@@ -303,8 +320,12 @@
 <div class="app hidden" id="mainApp">
   <div class="header">
     <div class="header-top">
-      <span class="header-badge">﷽</span>
+      <div class="header-left">
+        <span class="header-badge">﷽</span>
+        <span class="streak-badge" id="streakBadge" style="display:none;" title="Daily study streak"></span>
+      </div>
       <div class="user-info">
+        <button class="btn-icon" id="soundToggle" onclick="toggleSound()" title="Toggle sound">🔇</button>
         <span class="user-email" id="userEmailDisplay"></span>
         <button class="btn-logout" onclick="signOut()">Sign Out</button>
       </div>
@@ -465,6 +486,161 @@ let currentUser = null, cards = [], deck = [], current = 0, flipped = false;
 // latest decision per card wins. Snapshots survive even if the card is later edited/deleted.
 let knewLog = [], forgotLog = [];
 let activeFilter = 'all', sharedStudyDeck = null;
+
+// ── FUN: sound, haptics, streak, confetti, phrases ──
+let audioCtx = null;
+let soundEnabled = (localStorage.getItem('dalil_sound') === '1');
+function ensureAudio() {
+  try {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    return true;
+  } catch(e) { return false; }
+}
+function playTones(notes) {
+  // notes: [{freq, start, dur, gain}]
+  if(!soundEnabled || !ensureAudio()) return;
+  const now = audioCtx.currentTime;
+  notes.forEach(n=>{
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = n.freq;
+    const t0 = now + (n.start||0);
+    const peak = n.gain ?? 0.16;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(peak, t0 + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0008, t0 + n.dur);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t0);
+    osc.stop(t0 + n.dur + 0.02);
+  });
+}
+function soundKnew()   { playTones([{freq:659.25, start:0, dur:0.16},{freq:987.77, start:0.09, dur:0.22}]); } // E5 → B5
+function soundForgot() { playTones([{freq:329.63, start:0, dur:0.18, gain:0.13},{freq:246.94, start:0.09, dur:0.24, gain:0.13}]); } // E4 → B3
+function soundFlip()   { playTones([{freq:880, start:0, dur:0.05, gain:0.08}]); } // brief A5 tick
+function soundCelebrate() {
+  // ascending arpeggio for high-score completion: C5 E5 G5 C6
+  playTones([
+    {freq:523.25, start:0,    dur:0.18},
+    {freq:659.25, start:0.10, dur:0.18},
+    {freq:783.99, start:0.20, dur:0.18},
+    {freq:1046.5, start:0.30, dur:0.42, gain:0.2},
+  ]);
+}
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  localStorage.setItem('dalil_sound', soundEnabled ? '1' : '0');
+  renderSoundToggle();
+  if(soundEnabled) { ensureAudio(); soundKnew(); }
+}
+function renderSoundToggle() {
+  const btn = document.getElementById('soundToggle');
+  if(!btn) return;
+  btn.textContent = soundEnabled ? '🔊' : '🔇';
+  btn.classList.toggle('active', soundEnabled);
+  btn.title = soundEnabled ? 'Sound on — tap to mute' : 'Sound off — tap to enable';
+}
+
+// Tactile feedback on supported devices (Android Chrome etc; iOS Safari ignores).
+function haptic(pattern) { try { if(navigator.vibrate) navigator.vibrate(pattern); } catch(e) {} }
+
+// Daily study streak — increments on the first marking action of a new day.
+function streakKey() { return `dalil_streak_${currentUser?.id||'guest'}`; }
+function getStreak() {
+  try { return JSON.parse(localStorage.getItem(streakKey()) || '{"days":0,"lastDate":null}'); }
+  catch { return {days:0, lastDate:null}; }
+}
+function dayStr(d){ return d.toISOString().slice(0,10); }
+function todayKey()    { return dayStr(new Date()); }
+function yesterdayKey(){ const d=new Date(); d.setDate(d.getDate()-1); return dayStr(d); }
+function recordStudyActivity() {
+  const s = getStreak();
+  const t = todayKey();
+  if(s.lastDate === t) return s;
+  s.days = (s.lastDate === yesterdayKey()) ? s.days + 1 : 1;
+  s.lastDate = t;
+  localStorage.setItem(streakKey(), JSON.stringify(s));
+  renderStreak();
+  if(s.days===1) showToast('🔥 Streak started! Come back tomorrow to keep it alive.');
+  else if([3,7,14,30,50,100].includes(s.days)) showToast(`🔥 ${s.days}-day streak — MashaAllah!`);
+  return s;
+}
+function renderStreak() {
+  const el = document.getElementById('streakBadge');
+  if(!el) return;
+  const s = getStreak();
+  // Reset display if the streak is older than yesterday
+  if(s.lastDate && s.lastDate !== todayKey() && s.lastDate !== yesterdayKey()) {
+    s.days = 0;
+    localStorage.setItem(streakKey(), JSON.stringify({days:0,lastDate:s.lastDate}));
+  }
+  if(s.days>0) { el.style.display='inline-flex'; el.textContent = `🔥 ${s.days}`; el.title = `${s.days}-day study streak — keep it going!`; }
+  else { el.style.display='none'; }
+}
+
+// Confetti — fires on high-score deck completion.
+function fireConfetti() {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'confetti-canvas';
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  const colors = ['#c9a84c','#e8c97a','#4caf82','#7aa8e0','#a889e0','#ffffff'];
+  const particles = [];
+  for(let i=0;i<90;i++){
+    particles.push({
+      x: canvas.width/2 + (Math.random()-0.5)*120,
+      y: canvas.height*0.35,
+      vx: (Math.random()-0.5)*9,
+      vy: -6 - Math.random()*5,
+      r: 4 + Math.random()*5,
+      rot: Math.random()*Math.PI*2,
+      vrot: (Math.random()-0.5)*0.3,
+      color: colors[Math.floor(Math.random()*colors.length)],
+      life: 1
+    });
+  }
+  let frame = 0;
+  function step() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    particles.forEach(p=>{
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.22; p.vx *= 0.99;
+      p.rot += p.vrot;
+      p.life -= 0.006;
+      if(p.life<=0) return;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.r, -p.r*0.5, p.r*2, p.r);
+      ctx.restore();
+    });
+    frame++;
+    if(frame < 280) requestAnimationFrame(step);
+    else canvas.remove();
+  }
+  step();
+}
+
+// Rotating Islamic encouragement phrases on the Done screen.
+const HIGH_PHRASES = ['MashaAllah! 🌙','Allahumma barik!','Tabarakallah!','Alhamdulillah!','BarakAllahu feek!','Subhanallah!'];
+const LOW_PHRASES  = ['Keep going!','You\'ll get there, in shaa Allah','Don\'t give up!','Practice makes mastery','Every attempt counts','Bit by bit, with patience'];
+function pickPhrase(pct) {
+  const arr = pct >= 70 ? HIGH_PHRASES : LOW_PHRASES;
+  return arr[Math.floor(Math.random()*arr.length)];
+}
+
+// Stat-counter bump animation when knew/forgot count goes up.
+function bumpStat(elId, kind) {
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.classList.remove('bump-knew','bump-forgot');
+  void el.offsetWidth; // reflow so animation restarts
+  el.classList.add(kind==='knew' ? 'bump-knew' : 'bump-forgot');
+}
 let importedDeckIds = new Set(); // tracks decks already imported this session
 // Deck-level filter: null = all decks in category, 'mine' = personal cards only,
 // or a uuid string = a specific imported deck. Separate state for Study and My Cards.
@@ -478,6 +654,8 @@ async function enterApp(user) {
   document.getElementById('authScreen').classList.add('hidden');
   document.getElementById('mainApp').classList.remove('hidden');
   document.getElementById('userEmailDisplay').textContent = currentUser.email;
+  renderSoundToggle();
+  renderStreak();
   renderTypeUI();
   buildDeck();
   await loadCards();
@@ -978,7 +1156,7 @@ function renderStudy() {
       <div class="progress-fill" style="width:${prog}%"></div>
     </div>
     <span class="cat-pill ${catClass}">${c.cat}</span>
-    <div class="card-scene" onclick="flipCard()" id="cardScene">
+    <div class="card-scene" id="cardScene" onclick="onCardClick()" ontouchstart="onCardTouchStart(event)" ontouchend="onCardTouchEnd(event)">
       <div class="card-inner" id="cardInner">
         <div class="card-face card-front">
           <div class="card-hint">tap to flip 👆</div>
@@ -1000,7 +1178,8 @@ function renderStudy() {
     <div class="nav-row" style="max-width:520px;width:100%">
       <button class="btn-nav" onclick="prevCard()">← Previous</button>
       <button class="btn-nav" onclick="skipCard()">Skip →</button>
-    </div>`;
+    </div>
+    <div class="kbd-hint"><kbd>Space</kbd> flip · <kbd>K</kbd> knew · <kbd>F</kbd> forgot · <kbd>←</kbd>/<kbd>→</kbd> nav · swipe on mobile</div>`;
   flipped=false;
 }
 
@@ -1009,6 +1188,8 @@ function flipCard() {
   if(!inner)return; flipped=!flipped;
   inner.classList.toggle('flipped',flipped);
   if(flipped&&actions) actions.style.display='flex';
+  soundFlip();
+  haptic(8);
 }
 
 function markCard(knew) {
@@ -1020,7 +1201,13 @@ function markCard(knew) {
     const entry = { card: {...c}, at: Date.now() };
     (knew ? knewLog : forgotLog).push(entry);
   }
-  updateStats(); current++; flipped=false; renderStudy();
+  // Feedback: sound + haptic + counter bump
+  if(knew) { soundKnew();   haptic(25); }
+  else     { soundForgot(); haptic([15,30,15]); }
+  updateStats();
+  bumpStat(knew?'sessionKnew':'sessionForgot', knew?'knew':'forgot');
+  recordStudyActivity();
+  current++; flipped=false; renderStudy();
 }
 
 // Does a card belong to the current Study tab scope (active category + active deck filter)?
@@ -1039,10 +1226,11 @@ function renderDone() {
   const knew = knewLog.filter(e=>inStudyScope(e.card)).length;
   const forg = forgotLog.filter(e=>inStudyScope(e.card)).length;
   const total=knew+forg, pct=total>0?Math.round((knew/total)*100):0;
+  const phrase = pickPhrase(pct);
   area.innerHTML=`
     <div class="done-screen">
       <div class="icon">${pct>=70?'🎉':'💪'}</div>
-      <h2>${pct>=70?'MashaAllah!':'Keep going!'}</h2>
+      <h2>${escHtml(phrase)}</h2>
       <p>You reviewed all ${deck.length} cards.<br>Session score: <strong>${pct}%</strong></p>
       <div class="score-display">
         <div class="score-box knew" onclick="openSessionLog('knew')" style="cursor:pointer;"><div class="num">${knew}</div><div class="lbl">✅ Knew It</div></div>
@@ -1050,6 +1238,7 @@ function renderDone() {
       </div>
       <button class="btn-primary" style="max-width:200px;margin:0 auto;" onclick="restartSession()">🔄 Restart</button>
     </div>`;
+  if(pct >= 80 && total >= 3) { fireConfetti(); soundCelebrate(); }
 }
 
 function restartSession(){ knewLog=[]; forgotLog=[]; updateStats(); buildDeck(); }
@@ -1337,6 +1526,52 @@ async function submitFeedback() {
   closeFeedback();
   showToast('✅ Thanks for your feedback!');
 }
+
+// ── KEYBOARD SHORTCUTS (Study tab only, when not typing or in a modal) ──
+document.addEventListener('keydown', e=>{
+  const target = e.target;
+  if(!target || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+  if(document.querySelector('.modal-overlay.show')) return;
+  const studyTab = document.getElementById('tab-study');
+  if(!studyTab || studyTab.classList.contains('hidden')) return;
+  if(!document.getElementById('cardInner')) return;
+  switch(e.key){
+    case ' ':
+    case 'Enter':
+      e.preventDefault(); flipCard(); break;
+    case 'k': case 'K':
+      if(flipped) markCard(true); break;
+    case 'f': case 'F':
+      if(flipped) markCard(false); break;
+    case 'ArrowRight':
+      e.preventDefault(); skipCard(); break;
+    case 'ArrowLeft':
+      e.preventDefault(); prevCard(); break;
+  }
+});
+
+// ── SWIPE TO MARK on mobile (right=Knew, left=Forgot, when answer is shown) ──
+let swipeStart = null, justSwiped = false;
+function onCardTouchStart(e){
+  if(e.touches && e.touches[0]) swipeStart = {x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now()};
+}
+function onCardTouchEnd(e){
+  if(!swipeStart) return;
+  const t = e.changedTouches && e.changedTouches[0];
+  const start = swipeStart; swipeStart = null;
+  if(!t) return;
+  const dx = t.clientX - start.x, dy = t.clientY - start.y;
+  // Treat as tap when movement is small — let the click handler flip the card.
+  if(Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)*1.2) return;
+  if(!flipped) return; // only allow marking once the answer has been revealed
+  justSwiped = true;
+  setTimeout(()=>{ justSwiped=false; }, 400);
+  const scene = document.getElementById('cardScene');
+  const knew = dx > 0;
+  if(scene) scene.classList.add(knew ? 'swipe-knew' : 'swipe-forgot');
+  setTimeout(()=>markCard(knew), 160);
+}
+function onCardClick(){ if(!justSwiped) flipCard(); }
 
 function escHtml(s) {
   if(!s) return '';

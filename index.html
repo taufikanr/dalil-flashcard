@@ -40,6 +40,23 @@
   .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--gold); }
   .field select option { background: var(--card); }
 
+  /* COMBOBOX */
+  .combobox { position: relative; }
+  .combobox input { width: 100%; padding-right: 36px; }
+  .combobox input[readonly] { cursor: pointer; caret-color: transparent; user-select: none; }
+  .combobox input[readonly]::selection { background: transparent; }
+  .combo-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 6px 10px; font-size: 11px; line-height: 1; border-radius: 6px; transition: color 0.15s; }
+  .combo-toggle:hover { color: var(--gold); }
+  .combo-panel { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: 10px; max-height: 240px; overflow-y: auto; z-index: 60; display: none; box-shadow: 0 10px 28px rgba(0,0,0,0.4); }
+  .combo-panel.open { display: block; }
+  .combo-item { padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--border); transition: background 0.12s; }
+  .combo-item:last-child { border-bottom: none; }
+  .combo-item:hover { background: var(--gold-dim); color: var(--gold); }
+  .combo-item.highlighted { background: rgba(201,168,76,0.08); color: var(--gold); }
+  .combo-item.create-new { color: var(--gold); font-weight: 600; }
+  .combo-item.combo-empty { color: var(--text-muted); cursor: default; font-style: italic; }
+  .combo-item.combo-empty:hover { background: transparent; color: var(--text-muted); }
+
   /* BUTTONS */
   .btn-primary { width: 100%; padding: 12px; background: var(--gold); color: #0f1117; border: none; border-radius: 10px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
   .btn-primary:hover { opacity: 0.9; }
@@ -293,9 +310,12 @@
     <div class="add-form">
       <h3>✦ New Card</h3>
       <div class="field"><label>Category</label>
-        <input type="text" id="newCat" list="typeList" value="Quran" autocomplete="off" placeholder="Pick or type a new type (e.g. Fiqh, Arabic Vocab)" />
-        <datalist id="typeList"></datalist>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Use a default (Quran, Hadith, Seerah) or create your own — it'll appear as a filter automatically.</div>
+        <div class="combobox">
+          <input type="text" id="newCat" value="Quran" readonly autocomplete="off" placeholder="Choose a category" onfocus="openComboFor(this)" onclick="openComboFor(this)" onkeydown="onComboKeydown(event,this)" />
+          <button type="button" class="combo-toggle" tabindex="-1" onclick="toggleComboFor(this)">▾</button>
+          <div class="combo-panel" onclick="onComboItemClick(event)"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Need a new category? Go to <strong>Study</strong> or <strong>My Cards</strong> and tap <strong>+ New</strong>.</div>
       </div>
       <div class="field"><label>Question / Prompt</label><input type="text" id="newQ" placeholder="e.g. What is the dalil for patience?" /></div>
       <div class="field"><label>Answer / Dalil</label><textarea id="newA" rows="3" placeholder="e.g. QS. Az-Zumar: 10 — Indeed, the patient will be given their reward without account"></textarea></div>
@@ -541,12 +561,9 @@ function getCatPillClass(cat) {
   return DEFAULT_NAMES.includes(cat) ? 'cat-'+cat.toLowerCase() : 'cat-custom';
 }
 
-// Re-render datalist + category filter rows. Call after any change to `cards`.
+// Re-render category filter rows. Call after any change to `cards`.
 function renderTypeUI() {
   const types = getAllTypes();
-  // Datalist for combobox inputs (Add Card + inline Edit)
-  const dl = document.getElementById('typeList');
-  if(dl) dl.innerHTML = types.map(t=>`<option value="${escAttr(t.name)}">`).join('');
   // Study category filter row
   const sRow = document.getElementById('studyCatFilterRow');
   if(sRow){
@@ -566,6 +583,61 @@ function renderTypeUI() {
     ].join('');
   }
 }
+
+// ── COMBOBOX (custom dropdown matching input width, pick-only) ──
+// The user picks a category from the list — typing is disabled.
+// New categories are created from the filter row via the "+ New" pill.
+function closeAllCombos(except) {
+  document.querySelectorAll('.combo-panel.open').forEach(p=>{
+    if(p!==except) p.classList.remove('open');
+  });
+}
+function renderComboPanel(box) {
+  const input = box.querySelector('input');
+  const panel = box.querySelector('.combo-panel');
+  const current = (input.value||'').toLowerCase();
+  const types = getAllTypes();
+  if(types.length===0){
+    panel.innerHTML = '<div class="combo-item combo-empty">No categories yet — tap "+ New" on the Study filter.</div>';
+    return;
+  }
+  panel.innerHTML = types.map(t=>{
+    const isCurrent = t.name.toLowerCase()===current;
+    return `<div class="combo-item${isCurrent?' highlighted':''}" data-value="${escAttr(t.name)}">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</div>`;
+  }).join('');
+}
+function openComboFor(input) {
+  const box = input.closest('.combobox');
+  const panel = box.querySelector('.combo-panel');
+  closeAllCombos(panel);
+  renderComboPanel(box);
+  panel.classList.add('open');
+}
+function toggleComboFor(toggleBtn) {
+  const box = toggleBtn.closest('.combobox');
+  const panel = box.querySelector('.combo-panel');
+  if(panel.classList.contains('open')){ panel.classList.remove('open'); return; }
+  closeAllCombos(panel);
+  renderComboPanel(box);
+  panel.classList.add('open');
+}
+function onComboItemClick(e) {
+  const item = e.target.closest('.combo-item');
+  if(!item || item.classList.contains('combo-empty')) return;
+  const box = item.closest('.combobox');
+  box.querySelector('input').value = item.dataset.value || '';
+  box.querySelector('.combo-panel').classList.remove('open');
+}
+function onComboKeydown(e, input) {
+  if(e.key==='Escape' || e.key==='Enter'){
+    e.preventDefault();
+    input.closest('.combobox').querySelector('.combo-panel').classList.remove('open');
+  }
+}
+// Close panels when clicking outside any combobox
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.combobox')) closeAllCombos(null);
+});
 
 // ── CARDS ──
 async function loadCards() {
@@ -837,7 +909,11 @@ function renderList() {
       <div class="edit-form hidden" id="editForm_${c.id}">
         <div class="field">
           <label>Category</label>
-          <input type="text" id="editCat_${c.id}" list="typeList" value="${escAttr(c.cat||'')}" autocomplete="off" placeholder="e.g. Quran, Fiqh, Arabic Vocab" />
+          <div class="combobox">
+            <input type="text" id="editCat_${c.id}" value="${escAttr(c.cat||'')}" readonly autocomplete="off" placeholder="Choose a category" onfocus="openComboFor(this)" onclick="openComboFor(this)" onkeydown="onComboKeydown(event,this)" />
+            <button type="button" class="combo-toggle" tabindex="-1" onclick="toggleComboFor(this)">▾</button>
+            <div class="combo-panel" onclick="onComboItemClick(event)"></div>
+          </div>
         </div>
         <div class="field"><label>Question</label><input type="text" id="editQ_${c.id}" value="${escAttr(c.q)}" /></div>
         <div class="field"><label>Answer</label><textarea id="editA_${c.id}" rows="2">${escHtml(c.a)}</textarea></div>

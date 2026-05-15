@@ -80,9 +80,21 @@
 
   /* STATS */
   .stats-bar { display: flex; gap: 10px; margin-bottom: 24px; }
-  .stat { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
+  .stat { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; transition: border-color 0.15s, transform 0.1s; }
   .stat-num { font-size: 22px; font-weight: 700; color: var(--gold); }
   .stat-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .stat.clickable { cursor: pointer; }
+  .stat.clickable:hover { border-color: var(--gold-dim); }
+  .stat.clickable:active { transform: scale(0.98); }
+
+  /* SESSION LOG MODAL */
+  .session-log-list { max-height: 60vh; overflow-y: auto; margin-bottom: 14px; }
+  .session-log-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .session-log-item:last-child { border-bottom: none; }
+  .session-log-q { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+  .session-log-a { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+  .session-log-meta { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .session-log-empty { font-size: 13px; color: var(--text-muted); padding: 24px 0; text-align: center; line-height: 1.6; }
 
   /* FORMS */
   .add-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
@@ -309,8 +321,8 @@
 
   <div class="stats-bar">
     <div class="stat"><div class="stat-num" id="totalCount">0</div><div class="stat-label">My Cards</div></div>
-    <div class="stat"><div class="stat-num" id="sessionKnew">0</div><div class="stat-label">✅ Knew It</div></div>
-    <div class="stat"><div class="stat-num" id="sessionForgot">0</div><div class="stat-label">❌ Forgot</div></div>
+    <div class="stat clickable" onclick="openSessionLog('knew')" title="See the cards you knew in this view"><div class="stat-num" id="sessionKnew">0</div><div class="stat-label">✅ Knew It</div></div>
+    <div class="stat clickable" onclick="openSessionLog('forgot')" title="See the cards you forgot in this view"><div class="stat-num" id="sessionForgot">0</div><div class="stat-label">❌ Forgot</div></div>
   </div>
 
   <!-- STUDY -->
@@ -382,6 +394,18 @@
   </div>
 </div>
 
+<!-- SESSION LOG MODAL -->
+<div class="modal-overlay" id="sessionLogModal" onclick="if(event.target===this)closeSessionLog()">
+  <div class="modal">
+    <h3 id="sessionLogTitle">✅ Cards you knew</h3>
+    <p class="modal-sub" id="sessionLogSub"></p>
+    <div class="session-log-list" id="sessionLogList"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="closeSessionLog()">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- FEEDBACK MODAL -->
 <div class="modal-overlay" id="feedbackModal" onclick="if(event.target===this)closeFeedback()">
   <div class="modal">
@@ -437,7 +461,10 @@ const DEFAULT_TYPES = [
 const DEFAULT_NAMES = DEFAULT_TYPES.map(t=>t.name);
 
 let currentUser = null, cards = [], deck = [], current = 0, flipped = false;
-let sessionKnew = 0, sessionForgot = 0, activeFilter = 'all', sharedStudyDeck = null;
+// Session logs: each entry is { card: {snapshot}, at: ms }. Dedupe is by card.id so the
+// latest decision per card wins. Snapshots survive even if the card is later edited/deleted.
+let knewLog = [], forgotLog = [];
+let activeFilter = 'all', sharedStudyDeck = null;
 let importedDeckIds = new Set(); // tracks decks already imported this session
 // Deck-level filter: null = all decks in category, 'mine' = personal cards only,
 // or a uuid string = a specific imported deck. Separate state for Study and My Cards.
@@ -928,7 +955,10 @@ function buildDeck() {
     deck=[...src];
   }
   for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
-  current=0; flipped=false; renderStudy();
+  current=0; flipped=false;
+  // Scope changed → session counters reflect a different slice now
+  updateStats();
+  renderStudy();
 }
 
 function renderStudy() {
@@ -982,8 +1012,23 @@ function flipCard() {
 }
 
 function markCard(knew) {
-  if(knew) sessionKnew++; else sessionForgot++;
+  const c = deck[current];
+  if(c && c.id){
+    // Latest decision per card wins — drop any earlier entry on either side.
+    knewLog   = knewLog.filter(e=>e.card.id!==c.id);
+    forgotLog = forgotLog.filter(e=>e.card.id!==c.id);
+    const entry = { card: {...c}, at: Date.now() };
+    (knew ? knewLog : forgotLog).push(entry);
+  }
   updateStats(); current++; flipped=false; renderStudy();
+}
+
+// Does a card belong to the current Study tab scope (active category + active deck filter)?
+function inStudyScope(card) {
+  if(activeFilter!=='all' && card.cat!==activeFilter) return false;
+  if(activeStudyDeckId==='mine' && card.source_deck_id) return false;
+  if(activeStudyDeckId && activeStudyDeckId!=='mine' && card.source_deck_id!==activeStudyDeckId) return false;
+  return true;
 }
 
 function skipCard(){current++;flipped=false;renderStudy();}
@@ -991,21 +1036,23 @@ function prevCard(){if(current>0){current--;flipped=false;renderStudy();}}
 
 function renderDone() {
   const area=document.getElementById('studyArea');
-  const total=sessionKnew+sessionForgot, pct=total>0?Math.round((sessionKnew/total)*100):0;
+  const knew = knewLog.filter(e=>inStudyScope(e.card)).length;
+  const forg = forgotLog.filter(e=>inStudyScope(e.card)).length;
+  const total=knew+forg, pct=total>0?Math.round((knew/total)*100):0;
   area.innerHTML=`
     <div class="done-screen">
       <div class="icon">${pct>=70?'🎉':'💪'}</div>
       <h2>${pct>=70?'MashaAllah!':'Keep going!'}</h2>
       <p>You reviewed all ${deck.length} cards.<br>Session score: <strong>${pct}%</strong></p>
       <div class="score-display">
-        <div class="score-box knew"><div class="num">${sessionKnew}</div><div class="lbl">✅ Knew It</div></div>
-        <div class="score-box forgot"><div class="num">${sessionForgot}</div><div class="lbl">❌ Forgot</div></div>
+        <div class="score-box knew" onclick="openSessionLog('knew')" style="cursor:pointer;"><div class="num">${knew}</div><div class="lbl">✅ Knew It</div></div>
+        <div class="score-box forgot" onclick="openSessionLog('forgot')" style="cursor:pointer;"><div class="num">${forg}</div><div class="lbl">❌ Forgot</div></div>
       </div>
       <button class="btn-primary" style="max-width:200px;margin:0 auto;" onclick="restartSession()">🔄 Restart</button>
     </div>`;
 }
 
-function restartSession(){sessionKnew=0;sessionForgot=0;updateStats();buildDeck();}
+function restartSession(){ knewLog=[]; forgotLog=[]; updateStats(); buildDeck(); }
 
 // ── MY CARDS LIST ──
 function setListFilter(f,btn) {
@@ -1214,8 +1261,50 @@ async function deleteSharedDeck(deckId) {
 // ── UTILS ──
 function updateStats() {
   document.getElementById('totalCount').textContent=cards.length;
-  document.getElementById('sessionKnew').textContent=sessionKnew;
-  document.getElementById('sessionForgot').textContent=sessionForgot;
+  // Session counters reflect ONLY the current Study scope so they answer
+  // "how am I doing in this view right now?" instead of a noisy global total.
+  const knew = knewLog.filter(e=>inStudyScope(e.card)).length;
+  const forg = forgotLog.filter(e=>inStudyScope(e.card)).length;
+  document.getElementById('sessionKnew').textContent=knew;
+  document.getElementById('sessionForgot').textContent=forg;
+}
+
+// ── SESSION LOG MODAL ──
+function scopeLabel() {
+  const parts = [];
+  parts.push(activeFilter==='all' ? 'All categories' : activeFilter);
+  if(activeStudyDeckId==='mine') parts.push('My Cards only');
+  else if(activeStudyDeckId){
+    const sample = cards.find(c=>c.source_deck_id===activeStudyDeckId);
+    parts.push(sample?.source_deck_title ? `Deck: ${sample.source_deck_title}` : 'Imported deck');
+  }
+  return parts.join(' · ');
+}
+function openSessionLog(kind) {
+  const log = kind==='knew' ? knewLog : forgotLog;
+  // Newest first so the most recent decisions sit at the top
+  const scoped = log.filter(e=>inStudyScope(e.card)).slice().sort((a,b)=>b.at-a.at);
+  document.getElementById('sessionLogTitle').textContent = kind==='knew' ? '✅ Cards you knew' : '❌ Cards you forgot';
+  document.getElementById('sessionLogSub').textContent = `${scoped.length} card${scoped.length===1?'':'s'} in this view — ${scopeLabel()}.`;
+  const listEl = document.getElementById('sessionLogList');
+  if(scoped.length===0){
+    listEl.innerHTML = `<div class="session-log-empty">${kind==='knew'?'No cards marked as known here yet.':'Nothing forgotten in this view — keep it up!'}<br>Switch filter or start studying to fill this list.</div>`;
+  } else {
+    listEl.innerHTML = scoped.map(e=>{
+      const c = e.card;
+      return `<div class="session-log-item">
+        <div class="session-log-q">${escHtml(c.q)}</div>
+        <div class="session-log-a">${escHtml(c.a)}</div>
+        <div class="session-log-meta">
+          <span class="cat-pill ${getCatPillClass(c.cat)}" style="font-size:9px;padding:2px 7px;">${escHtml(c.cat||'')}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('sessionLogModal').classList.add('show');
+}
+function closeSessionLog() {
+  document.getElementById('sessionLogModal').classList.remove('show');
 }
 
 function showToast(msg) {

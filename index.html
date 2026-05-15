@@ -130,6 +130,23 @@
   .filter-btn.active { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
   .filter-btn.filter-add { border-style: dashed; color: var(--gold); border-color: rgba(201,168,76,0.5); }
   .filter-btn.filter-add:hover { background: var(--gold-dim); border-color: var(--gold); }
+  .filter-btn.filter-manage { color: var(--text-dim); }
+  .filter-btn.filter-manage:hover { color: var(--gold); border-color: var(--gold); }
+
+  /* MANAGE CATEGORIES MODAL */
+  .manage-list { max-height: 60vh; overflow-y: auto; margin-bottom: 14px; }
+  .manage-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .manage-row:last-child { border-bottom: none; }
+  .manage-row-info { flex: 1; min-width: 0; }
+  .manage-row-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .manage-row-count { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .manage-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .btn-rename, .btn-delete-cat { padding: 6px 12px; border-radius: 8px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .btn-rename { background: rgba(76,175,130,0.12); color: var(--green); border: 1px solid rgba(76,175,130,0.3); }
+  .btn-rename:hover { background: rgba(76,175,130,0.22); }
+  .btn-delete-cat { background: rgba(224,92,92,0.12); color: var(--red); border: 1px solid rgba(224,92,92,0.3); }
+  .btn-delete-cat:hover { background: rgba(224,92,92,0.22); }
+  .btn-rename:disabled, .btn-delete-cat:disabled { opacity: 0.5; cursor: wait; }
   .filter-row.deck-row .filter-btn { font-size: 11px; padding: 5px 12px; }
   .filter-row.deck-row { gap: 6px; margin-bottom: 12px; }
   .deck-source { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
@@ -353,6 +370,18 @@
   Built with <span class="heart">❤️</span> by <span class="brand">BroApp</span><span class="sep">·</span>A Nuvia Ventures Product
 </footer>
 
+<!-- MANAGE CATEGORIES MODAL -->
+<div class="modal-overlay" id="manageModal" onclick="if(event.target===this)closeManageCategories()">
+  <div class="modal">
+    <h3>⚙ Manage Categories</h3>
+    <p class="modal-sub">Rename a category, or delete it together with <strong>every card</strong> inside it. Defaults (Quran, Hadith, Seerah) can be deleted too.</p>
+    <div class="manage-list" id="manageCategoryList"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="closeManageCategories()">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- FEEDBACK MODAL -->
 <div class="modal-overlay" id="feedbackModal" onclick="if(event.target===this)closeFeedback()">
   <div class="modal">
@@ -508,25 +537,48 @@ function signOut() {
 }
 
 // ── TYPES (categories) ──
-// Custom types live in localStorage so an empty deck can exist before any card uses it.
-// Once a card uses a type, the type also appears via cards[].cat — both sources are merged.
-function customTypesKey() { return `dalil_custom_types_${currentUser?.id||'guest'}`; }
+// Two persistence buckets in localStorage (per signed-in user):
+//   • dalil_custom_types_<uid>       — names of user-created categories (may exist with 0 cards)
+//   • dalil_hidden_defaults_<uid>    — built-in defaults the user has deleted/renamed away
+// A default reappears automatically if any card still uses it (e.g. after importing a deck).
+function customTypesKey()    { return `dalil_custom_types_${currentUser?.id||'guest'}`; }
+function hiddenDefaultsKey() { return `dalil_hidden_defaults_${currentUser?.id||'guest'}`; }
 function getStoredCustomTypes() {
   try { return JSON.parse(localStorage.getItem(customTypesKey()) || '[]'); }
   catch { return []; }
 }
+function setStoredCustomTypes(list) {
+  localStorage.setItem(customTypesKey(), JSON.stringify(list));
+}
 function addStoredCustomType(name) {
   const list = getStoredCustomTypes();
-  if(!list.includes(name)) { list.push(name); localStorage.setItem(customTypesKey(), JSON.stringify(list)); }
+  if(!list.includes(name)) { list.push(name); setStoredCustomTypes(list); }
+}
+function removeStoredCustomType(name) {
+  setStoredCustomTypes(getStoredCustomTypes().filter(n=>n!==name));
+}
+function getHiddenDefaults() {
+  try { return JSON.parse(localStorage.getItem(hiddenDefaultsKey()) || '[]'); }
+  catch { return []; }
+}
+function addHiddenDefault(name) {
+  const list = getHiddenDefaults();
+  if(!list.includes(name)) { list.push(name); localStorage.setItem(hiddenDefaultsKey(), JSON.stringify(list)); }
+}
+function removeHiddenDefault(name) {
+  localStorage.setItem(hiddenDefaultsKey(), JSON.stringify(getHiddenDefaults().filter(n=>n!==name)));
 }
 
-// Returns ordered list of {name, emoji} — defaults first, then user's custom types alphabetically.
+// Returns ordered list of {name, emoji} — visible defaults first, then user's custom types alphabetically.
 function getAllTypes() {
-  const fromCards = cards.map(c=>c.cat).filter(Boolean);
+  const fromCards = new Set(cards.map(c=>c.cat).filter(Boolean));
   const fromStorage = getStoredCustomTypes();
-  const set = new Set([...fromCards, ...fromStorage]);
-  const customs = [...set].filter(n=>!DEFAULT_NAMES.includes(n)).sort((a,b)=>a.localeCompare(b));
-  return [...DEFAULT_TYPES, ...customs.map(name=>({name, emoji:''}))];
+  const hidden = new Set(getHiddenDefaults());
+  // Show a default if not hidden, OR if any card still uses it (e.g. after importing a shared deck)
+  const defaults = DEFAULT_TYPES.filter(t => !hidden.has(t.name) || fromCards.has(t.name));
+  const customSet = new Set([...fromCards, ...fromStorage]);
+  const customs = [...customSet].filter(n=>!DEFAULT_NAMES.includes(n)).sort((a,b)=>a.localeCompare(b));
+  return [...defaults, ...customs.map(name=>({name, emoji:''}))];
 }
 
 function addNewTypePrompt(target) {
@@ -537,10 +589,14 @@ function addNewTypePrompt(target) {
   if(name.length>40){ showToast('Name is too long (max 40 chars).'); return; }
   const existing = getAllTypes().map(t=>t.name.toLowerCase());
   if(existing.includes(name.toLowerCase())){ showToast('That category already exists.'); return; }
-  addStoredCustomType(name);
+  // If the name matches a hidden default, just unhide it (preserve canonical capitalisation + emoji).
+  const matchingDefault = DEFAULT_TYPES.find(t=>t.name.toLowerCase()===name.toLowerCase());
+  const finalName = matchingDefault ? matchingDefault.name : name;
+  if(matchingDefault) removeHiddenDefault(matchingDefault.name);
+  else addStoredCustomType(finalName);
   // Switch the relevant filter to the new category so it's immediately visible
-  if(target==='list'){ listCatFilter=name; activeListDeckId=null; }
-  else { activeFilter=name; activeStudyDeckId=null; sharedStudyDeck=null; }
+  if(target==='list'){ listCatFilter=finalName; activeListDeckId=null; }
+  else { activeFilter=finalName; activeStudyDeckId=null; sharedStudyDeck=null; }
   renderTypeUI();
   renderStudyDeckFilter(); renderListDeckFilter();
   buildDeck(); renderList();
@@ -549,7 +605,99 @@ function addNewTypePrompt(target) {
     const row = document.getElementById(target==='list'?'listCatFilterRow':'studyCatFilterRow');
     if(row) row.scrollLeft = row.scrollWidth;
   });
-  showToast(`✅ "${name}" added — start adding cards to it!`);
+  showToast(`✅ "${finalName}" added — start adding cards to it!`);
+}
+
+// ── MANAGE CATEGORIES (rename / delete) ──
+function openManageCategories() {
+  renderManageCategoriesList();
+  document.getElementById('manageModal').classList.add('show');
+}
+function closeManageCategories() {
+  document.getElementById('manageModal').classList.remove('show');
+}
+function renderManageCategoriesList() {
+  const el = document.getElementById('manageCategoryList');
+  if(!el) return;
+  const types = getAllTypes();
+  if(types.length===0){
+    el.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">No categories yet. Tap "+ New" on the filter row to create one.</p>';
+    return;
+  }
+  el.innerHTML = types.map(t=>{
+    const count = cards.filter(c=>c.cat===t.name).length;
+    const safeName = escAttr(t.name);
+    return `<div class="manage-row">
+      <div class="manage-row-info">
+        <div class="manage-row-name">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</div>
+        <div class="manage-row-count">${count} card${count===1?'':'s'}</div>
+      </div>
+      <div class="manage-row-actions">
+        <button class="btn-rename" onclick="renameCategory('${safeName}')">Rename</button>
+        <button class="btn-delete-cat" onclick="deleteCategory('${safeName}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function renameCategory(oldName) {
+  const raw = prompt(`Rename "${oldName}" to:`, oldName);
+  if(raw===null) return;
+  const newName = raw.trim();
+  if(!newName){ showToast('Name cannot be empty.'); return; }
+  if(newName.length>40){ showToast('Name is too long (max 40 chars).'); return; }
+  if(newName===oldName) return;
+  const all = getAllTypes().map(t=>t.name.toLowerCase());
+  if(all.includes(newName.toLowerCase())){
+    showToast(`"${newName}" already exists. Delete it first to merge.`);
+    return;
+  }
+  const count = cards.filter(c=>c.cat===oldName).length;
+  // One UPDATE covers every card in the category — scales fine to thousands.
+  if(count > 0){
+    const {error} = await sb.from('cards').update({cat:newName}).eq('user_id',currentUser.id).eq('cat',oldName);
+    if(error){ showToast('Error renaming: '+error.message); return; }
+  }
+  cards.forEach(c => { if(c.cat===oldName) c.cat=newName; });
+  // If we renamed a default, hide its original name so it doesn't reappear.
+  if(DEFAULT_NAMES.includes(oldName)) addHiddenDefault(oldName);
+  // Storage bookkeeping: remove old custom entry, add new (unless it's a default — then unhide).
+  removeStoredCustomType(oldName);
+  if(DEFAULT_NAMES.includes(newName)) removeHiddenDefault(newName);
+  else addStoredCustomType(newName);
+  // Migrate any active filters pointing at the old name.
+  if(activeFilter===oldName) activeFilter=newName;
+  if(listCatFilter===oldName) listCatFilter=newName;
+  renderTypeUI();
+  renderStudyDeckFilter(); renderListDeckFilter();
+  buildDeck(); renderList();
+  renderManageCategoriesList();
+  showToast(`✏️ Renamed to "${newName}" (${count} card${count===1?'':'s'} updated).`);
+}
+
+async function deleteCategory(name) {
+  const count = cards.filter(c=>c.cat===name).length;
+  const warning = count>0
+    ? `Delete "${name}" and all ${count} card${count===1?'':'s'} inside it? This cannot be undone.`
+    : `Remove "${name}" from your categories?`;
+  if(!confirm(warning)) return;
+  // One DELETE removes every card in the category — scales fine to thousands.
+  if(count > 0){
+    const {error} = await sb.from('cards').delete().eq('user_id',currentUser.id).eq('cat',name);
+    if(error){ showToast('Error deleting category: '+error.message); return; }
+  }
+  cards = cards.filter(c => c.cat !== name);
+  if(DEFAULT_NAMES.includes(name)) addHiddenDefault(name);
+  removeStoredCustomType(name);
+  // Reset filters that pointed at the deleted category.
+  if(activeFilter===name) activeFilter='all';
+  if(listCatFilter===name) listCatFilter='all';
+  updateStats();
+  renderTypeUI();
+  renderStudyDeckFilter(); renderListDeckFilter();
+  buildDeck(); renderList();
+  renderManageCategoriesList();
+  showToast(count>0 ? `🗑 "${name}" deleted (${count} card${count===1?'':'s'}).` : `🗑 "${name}" removed.`);
 }
 
 function getCatLabel(cat) {
@@ -570,7 +718,8 @@ function renderTypeUI() {
     sRow.innerHTML = [
       `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all',this)">All</button>`,
       ...types.map(t=>`<button class="filter-btn ${activeFilter===t.name?'active':''}" onclick="setFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`),
-      `<button class="filter-btn filter-add" onclick="addNewTypePrompt('study')" title="Add new category">+ New</button>`
+      `<button class="filter-btn filter-add" onclick="addNewTypePrompt('study')" title="Add new category">+ New</button>`,
+      `<button class="filter-btn filter-manage" onclick="openManageCategories()" title="Rename or delete categories">⚙</button>`
     ].join('');
   }
   // My Cards category filter row
@@ -579,7 +728,8 @@ function renderTypeUI() {
     lRow.innerHTML = [
       `<button class="filter-btn ${listCatFilter==='all'?'active':''}" onclick="setListFilter('all',this)">All</button>`,
       ...types.map(t=>`<button class="filter-btn ${listCatFilter===t.name?'active':''}" onclick="setListFilter('${escAttr(t.name)}',this)">${t.emoji?escHtml(t.emoji)+' ':''}${escHtml(t.name)}</button>`),
-      `<button class="filter-btn filter-add" onclick="addNewTypePrompt('list')" title="Add new category">+ New</button>`
+      `<button class="filter-btn filter-add" onclick="addNewTypePrompt('list')" title="Add new category">+ New</button>`,
+      `<button class="filter-btn filter-manage" onclick="openManageCategories()" title="Rename or delete categories">⚙</button>`
     ].join('');
   }
 }
